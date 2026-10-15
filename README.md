@@ -6,6 +6,8 @@
 
 **项目状态**：一期 W1—W8 与 T1-18 打包已完成；**Phase 2 工程卡 T2-01～T2-05 全部完成**。T2-05 工具自动验收 **TOOLING_PASS（8/8）**，218 次定向证据（跨项复用）；本轮 unit/contract/integration **70 passed**。剩余为目标机 / 人工项：真实 ASR V1/V2、M3/M4/M5、Electron 视觉与实际操作、V3/V4、真实影子运行、R-5；R-4 完整人工证据与 Q2/Q3/Q4 也仍开放。**真实 ≥20 场 PENDING，计入 0，工具通过不代表放开使用。** 详见 [T2-05 实施记录](docs/T2-05-施工卡.md#63-实施记录e3e5) 和 [验收完整输出](docs/evidence/T2-05-acceptance.txt)。本轮未运行全量，等待外部检查循环取证。
 
+阶段 F F6 门禁补齐：领域层 `mypy --strict` 已归零，接入流水线与 pytest；单元覆盖率以 `pytest-cov` 对 `tests/unit` 实测，门槛为 75%。详见 [门禁补齐记录](docs/施工日志与踩坑实录.md#阶段-f-f6门禁补齐)。
+
 ---
 
 ## 目录
