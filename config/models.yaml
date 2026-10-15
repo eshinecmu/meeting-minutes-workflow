@@ -1,0 +1,22 @@
+asr:
+  provider: "funasr_local"
+  model: "paraformer-zh"
+  model_dir: "./models/funasr/paraformer-zh"
+  device: "auto"              # auto | cpu | cuda
+  chunk_seconds: 1800
+  chunk_overlap_seconds: 50
+
+llm:
+  provider: "ollama_local"
+  base_url: "http://127.0.0.1:11434"
+  model: "qwen2.5:14b-instruct-q5_K_M"
+  temperature: 0.2
+  num_ctx: 8192
+  timeout_seconds: 600
+
+export:
+  provider: "docx_exporter"
+  default_template: "./config/templates/regular-meeting.yaml"
+  font_fallback_policy: "warn"   # warn | fallback | fail
+  enable_doc_export: true
+  soffice_path: "C:/Program Files/LibreOffice/program/soffice.exe"

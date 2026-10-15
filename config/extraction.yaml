@@ -1,0 +1,23 @@
+extraction:
+  chunk:
+    target_chars: 1500
+    min_chars: 1000
+    max_chars: 2000
+    overlap_chars: 200
+  merge:
+    topic_similarity_threshold: 0.82
+    resolution_dedup_threshold: 0.90
+  retry:
+    max_schema_retries: 2
+  # 术语库（T1-07）。本段可热改，改完重启生效。
+  glossary:
+    # 喂给 ASR 的热词上限。**这是引擎的约束，不是本项目的性能参数** ——
+    # FunASR 的热词对数量敏感，**超限可能整体不生效**（静默失效）。
+    # 超限时程序会截断并告警（先丢 term/codename，保住 person/org）。
+    # 施工卡原文取 2000；换引擎版本时按新引擎的实际上限调整。
+    hotword_limit: 2000
+    # 转写后是否自动把易错写法改回规范写法。
+    # 关掉只影响"回改"，热词注入照旧（两者独立）。
+    # 复核页预览改写效果时也不写审计，见 GlossaryService.correct_text。
+    auto_correct: true
+

@@ -1,0 +1,198 @@
+/* ============================================================================
+ * mmwf 全局样式
+ * ----------------------------------------------------------------------------
+ * 全部颜色/字号/间距都走 tokens.css 的变量，这里不写裸值。
+ * ========================================================================= */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  line-height: var(--lh);
+}
+
+/* -- 骨架 ---------------------------------------------------------------- */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-border);
+}
+.topbar .title { font-size: var(--fs-lg); font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.topbar .operator { color: var(--c-text-dim); font-size: var(--fs-sm); }
+
+.content { flex: 1; overflow: auto; padding: var(--sp-5); }
+
+/* -- 步骤条（三步操作：投递 → 确认 → 导出） ----------------------------- */
+.steps { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-5); }
+.steps .step {
+  flex: 1;
+  padding: var(--sp-3);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-text-dim);
+  text-align: center;
+}
+.steps .step.active {
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+  font-weight: 600;
+}
+.steps .step.done { color: var(--c-ok); }
+
+/* -- 卡片 ---------------------------------------------------------------- */
+.card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+.card > h2 {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+/* -- 表单 ---------------------------------------------------------------- */
+.field { margin-bottom: var(--sp-4); }
+.field > label {
+  display: block;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--c-text-dim);
+}
+input[type="text"], textarea, select {
+  width: 100%;
+  padding: var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  color: var(--c-text);
+  background: var(--c-surface);
+}
+input[type="text"]:focus, textarea:focus, select:focus {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 1px;
+  border-color: var(--c-primary);
+}
+textarea { min-height: 160px; resize: vertical; line-height: var(--lh); }
+
+/* -- 按钮 ---------------------------------------------------------------- */
+.btn {
+  padding: var(--sp-3) var(--sp-5);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.btn:hover { background: #f0f2f5; }
+.btn:focus-visible { outline: 2px solid var(--c-focus); outline-offset: 1px; }
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.btn-primary:hover { background: var(--c-primary-h); }
+.btn-danger { color: var(--c-danger); border-color: var(--c-danger); }
+
+.row { display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: center; }
+
+/* -- 状态徽标 ------------------------------------------------------------ */
+.badge {
+  display: inline-block;
+  padding: 2px var(--sp-3);
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  background: #eef1f5;
+  color: var(--c-text-dim);
+}
+.badge.pending { background: #fff4e5; color: var(--c-warn); }
+.badge.done    { background: #e8f5ec; color: var(--c-ok); }
+.badge.fail    { background: #fdecea; color: var(--c-danger); }
+
+/* -- G2 待确认项：★ 四要素必须**并排可见**（F4.2），不许折叠 ------------ */
+.factor-list { display: grid; gap: var(--sp-4); }
+.factor {
+  border: 1px solid var(--c-border);
+  border-left: 4px solid var(--c-warn);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  background: var(--c-surface);
+}
+.factor .factor-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.factor .factor-title { font-weight: 600; }
+.factor .four {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+}
+.factor .four .item {
+  background: #fafbfc;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3);
+}
+.factor .four .item .label {
+  font-size: var(--fs-xs);
+  color: var(--c-text-dim);
+  margin-bottom: var(--sp-1);
+}
+.factor .four .item .value { font-size: var(--fs-sm); }
+
+/* -- 提示条 -------------------------------------------------------------- */
+.notice {
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-4);
+  font-size: var(--fs-sm);
+}
+.notice.error { background: #fdecea; color: var(--c-danger); border: 1px solid #f5c2c0; }
+.notice.info  { background: #eef4fd; color: var(--c-primary); border: 1px solid #c9dcf5; }
+.notice.ok    { background: #e8f5ec; color: var(--c-ok); border: 1px solid #bfe3c9; }
+
+.empty { color: var(--c-text-dim); padding: var(--sp-5); text-align: center; }
+
+/* -- 列表 ---------------------------------------------------------------- */
+.list { display: grid; gap: var(--sp-3); }
+.list .item-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+}
+.list .item-row:hover { border-color: var(--c-primary); }
+.list .item-row .grow { flex: 1; }

@@ -1,0 +1,660 @@
+"""公文导出（T1-09 service 层，M11 `docx` + `adapters/exporter`）。
+
+本模块把三样东西接起来：
+
+    `domain/docx`       结构转换 + 版式补丁（纯渲染，不落盘）
+    `infra/filestore`   `export/vN.docx` 落盘 + manifest 登记
+    `infra/audit`       `export` 留痕（动作已由 T1-04 登记）
+
+service 层做四件"领域层做不了"的事：
+
+  1. **读输入**：`record/vN.md`（T1-08 落盘的那份）+ `meeting` 表
+  2. **决定导出文件名**：与 manifest 里的记录稿版本对应
+  3. **落盘 + 留痕**
+  4. **幂等**：同一份记录稿重复导出，不产生第二个文件（C07、IT-09）
+
+为什么导出稿**不加密**
+----------------------
+`filestore.PLAINTEXT_AREAS = {"export"}`（SAD §11.2）。这不是疏漏，
+是必须的：导出的 docx 是**交付物** —— 要给领导看、要打印、要归档、
+要发给上级单位。它一旦加密，Word 打不开，这份公文就废了。
+
+于是有一条**别处没有的红线**，写在这里以免将来有人"顺手优化"掉：
+
+    `export/` 是整个 data 目录里唯一不加密的地方。
+    因此**绝不允许**把中间产物（转写稿、记录稿、抽取结果）落到这里。
+    它们必须留在 `transcript/` / `record/` / `minutes/` 这些加密区。
+
+源码里 `rec://` 之类的引用路径只有一条：从加密区读、往明文区写**最终产物**。
+
+幂等键怎么算（C07：副作用节点必须幂等）
+--------------------------------------
+`IdempotencyGuard` 在 M03（graph）里统一管，本模块只提供**稳定的键**：
+
+    key = f"export:{meeting_id}:{version}:{content_sha256[:16]}"
+
+含 `content_sha256` 而不是只含 `version`：同一版本号理论上可能有两次
+不同的渲染（比如改了 `config/models.yaml` 的字体策略），两份产物都该留下。
+含 `version` 而不是只含内容哈希：便于人读，也便于"这份导出对应哪版记录稿"
+这个问题能被直接回答。
+
+同名覆盖 vs 新文件
+------------------
+`export/` 下的文件名固定为 `{meeting_id}-v{version}.docx`。
+**同键重导出时覆盖同名文件**，不生成 `-1` / `-2` 副本 ——
+理由是"交付物只有一个当前版本"，多副本会让"我发出去的是哪一份"变成
+无法回答的问题。这**与记录稿的策略相反**（记录稿留版本便于回溯核对），
+因为两者的用途不同：记录稿是"核对依据"要留痕，导出稿是"交付成品"要唯一。
+
+`.doc` 导出（一期）
+-------------------
+SAD §6 / 施工卡：`.doc` 走 LibreOffice 无头模式转换，
+且**必须作为独立进程调用**（GPL 隔离 —— 我们不链接 LO 的代码，
+只是调用它，这样本项目的许可不会被 GPL 传染）。
+`soffice` 缺失时**不报错**，返回 `skipped` 并说明原因：
+一期 `.doc` 是可选兼容格式，主交付是 `.docx`。
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import shutil
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Mapping
+
+from mmwf.domain.docx import (
+    RenderOptions,
+    RenderResult,
+    build_check_result_json,
+    check_fonts,
+    policy_blocks_export,
+    precheck_policy_error,
+    render_markdown_to_docx,
+)
+from mmwf.domain.docx.writer import FontMissingError
+from mmwf.domain.errors import MmwfError
+from mmwf.infra.audit import AuditLogger
+from mmwf.infra.filestore import FileStore, StoredFile
+from mmwf.infra.db import connect_ctx
+
+logger = logging.getLogger(__name__)
+
+#: 导出目录（**明文区**，见模块文档的红线说明）。
+EXPORT_AREA = "export"
+
+#: 记录稿目录（加密区，T1-08 的产物在这里读）。
+RECORD_AREA = "record"
+
+#: 导出文件名模板。与记录稿版本号一一对应。
+EXPORT_NAME_TEMPLATE = "{meeting_id}-v{version}.docx"
+
+#: `.doc` 转换的产物后缀。
+DOC_SUFFIX = ".doc"
+
+#: `.doc` 导出结果状态。
+DOC_STATUS_OK = "ok"
+DOC_STATUS_SKIPPED = "skipped"
+DOC_STATUS_FAILED = "failed"
+
+#: 默认字体策略（config/models.yaml `font_fallback_policy`）。
+DEFAULT_FONT_POLICY = "warn"
+
+
+class ExportServiceError(MmwfError):
+    """导出环节的使用错误（缺输入、状态不对等）。
+
+    ★★ 继承 `MmwfError` 而不是裸 `RuntimeError`（T1-16 验收期修，坑 16）。
+
+    第一版是 `RuntimeError`，后果很隐蔽：API 层只注册了
+    `@app.exception_handler(MmwfError)` **和** `@app.exception_handler(Exception)`
+    两个处理器。裸 `RuntimeError` 不属于前者，于是掉进后者 ——
+    被渲染成 **E9001「程序遇到一个未预期的问题」+ 一个 trace_id**。
+
+    这对用户是**双重误导**，而且它踩中的是**最常见**的那条路径：
+
+      · 建完会议、还没生成记录稿就去点"导出" —— `latest_record_version()`
+        抛本异常。这是**首次使用的正常操作顺序**，不是异常；
+      · 界面却告诉用户"遇到了未预期的问题，请把编号告诉技术人员"，
+        用户去报障，而正确答案只是"你还没生成记录稿"。
+
+    继承 `MmwfError` 之后，它会被业务处理器接住，按 `code` 渲染成
+    一句**能指向真因**的话。子类沿用同一个继承链即可
+    （`ExportBlockedError` 已有 `code = "E5001"`，不受影响）。
+    """
+
+    code = "E1002"
+
+    def __init__(self, detail: str = "", **ctx: Any) -> None:
+        """⚠️ 必须显式写 `__init__`：`MmwfError` 是 dataclass，
+        第一个字段就是 `code` —— 直接 `ExportServiceError("一句话")`
+        会把那句话**当成错误码**塞进 `code`，`to_dict()` 吐出来的
+        `code` 就变成了用户那句话。
+
+        这里沿用 `domain/errors.py` 里 `InputError` 系子类的同款签名
+        （`detail` + `**ctx`），调用方现有的 `raise ExportServiceError("...")`
+        一行都不用改。
+        """
+        super().__init__(code=type(self).code, detail=detail, context=ctx)
+
+
+class ExportBlockedError(ExportServiceError):
+    """`fail` 策略下字体缺失，导出中止（映射 E5001）。"""
+
+    code = "E5001"
+
+
+@dataclass
+class DocConversion:
+    """`.doc` 转换的结果。"""
+
+    status: str = DOC_STATUS_SKIPPED
+    rel_path: str | None = None
+    reason: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.status == DOC_STATUS_OK
+
+    def to_dict(self) -> dict:
+        return {"status": self.status, "path": self.rel_path, "reason": self.reason}
+
+
+@dataclass
+class ExportResult:
+    """一次导出的完整结果。"""
+
+    meeting_id: str
+    version: int
+    rel_path: str
+    sha256: str
+    size_bytes: int
+    encrypted: bool
+    #: 幂等键（供 M03 的 IdempotencyGuard 使用）。
+    idempotency_key: str
+    #: 是否复用了已存在的同名文件（幂等命中）。
+    reused: bool = False
+    warnings: tuple[str, ...] = ()
+    font_report: object | None = None
+    doc_conversion: DocConversion = field(default_factory=DocConversion)
+
+    @property
+    def filename(self) -> str:
+        return Path(self.rel_path).name
+
+    @property
+    def font_warnings(self) -> tuple[str, ...]:
+        """只挑出字体相关的警告（E5002 的载荷）。"""
+        return tuple(w for w in self.warnings if "font missing" in w)
+
+    def to_dict(self) -> dict:
+        return {
+            "meeting_id": self.meeting_id,
+            "version": self.version,
+            "path": self.rel_path,
+            "sha256": self.sha256,
+            "size_bytes": self.size_bytes,
+            "encrypted": self.encrypted,
+            "idempotency_key": self.idempotency_key,
+            "reused": self.reused,
+            "warnings": list(self.warnings),
+            "font_warnings": list(self.font_warnings),
+            "doc": self.doc_conversion.to_dict(),
+        }
+
+    def summary(self) -> str:
+        state = "复用已有文件" if self.reused else "新生成"
+        return (
+            f"{self.filename}（v{self.version}，{state}，"
+            f"{self.size_bytes} 字节，{len(self.font_warnings)} 条字体警告）"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 幂等键
+# ---------------------------------------------------------------------------
+
+def make_idempotency_key(meeting_id: str, version: int, content_sha256: str) -> str:
+    """构造导出节点的幂等键（C07）。
+
+    形状 `export:{meeting_id}:v{version}:{sha16}`。
+
+    截断到 16 位十六进制：够用（64 bit，碰撞概率在"一个单位十年导出量"
+    这个量级下可忽略），且比 64 位全串更适合放进日志与审计 detail。
+    **不要**截断到 8 位 —— 那在批量任务里开始有可观测的碰撞风险。
+    """
+    digest = (content_sha256 or "").strip().lower()
+    if len(digest) < 16:
+        raise ValueError(
+            f"content_sha256 长度不足（{len(digest)}），无法构造幂等键"
+        )
+    return f"export:{meeting_id}:v{version}:{digest[:16]}"
+
+
+# ---------------------------------------------------------------------------
+# 服务
+# ---------------------------------------------------------------------------
+
+class ExportService:
+    """把记录稿导成符合 GB/T 9704—2012 的 docx。
+
+    与 `ReviewService` 的分工：那个负责"生成本文"（记录稿），
+    这个负责"把本文排成公文"。**本服务不读 `meeting` 表的业务字段** ——
+    记录稿已经是完整的八项元信息 + 正文，导出只做版式。
+    """
+
+    def __init__(
+        self,
+        store: FileStore,
+        *,
+        db_path: Path | str,
+        audit: AuditLogger | None = None,
+        operator: str = "system",
+        font_policy: str = DEFAULT_FONT_POLICY,
+        soffice_path: str | None = None,
+        enable_doc_export: bool = False,
+        normalize: bool = True,
+        auto_numbering: bool = True,
+    ) -> None:
+        self.store = store
+        self.db_path = Path(db_path)
+        self.audit = audit if audit is not None else AuditLogger(self.db_path)
+        self.operator = operator
+        self.font_policy = font_policy or DEFAULT_FONT_POLICY
+        self.soffice_path = soffice_path
+        self.enable_doc_export = enable_doc_export
+        self.normalize = normalize
+        self.auto_numbering = auto_numbering
+
+    # --- 输入读取 -------------------------------------------------------
+
+    def record_path(self, version: int) -> str:
+        return f"{RECORD_AREA}/v{version}.md"
+
+    def read_record(self, version: int) -> str:
+        """读记录稿 Markdown。**从加密区读**（filestore 透明解密）。"""
+        rel = self.record_path(version)
+        if not self.store.exists(rel):
+            raise ExportServiceError(
+                f"记录稿不存在：{rel}。请先运行 review 生成记录稿（T1-08）。"
+            )
+        return self.store.read_text(rel)
+
+    def latest_record_version(self) -> int:
+        """最新的记录稿版本号（记录稿缺失时抛错）。
+
+        与 T1-08 的 `next_version()` 一样取**目录 ∪ manifest** 的并集：
+        manifest 记着"曾经有过 v2"，即使有人手动删了文件，
+        我们也不该退回去覆盖 v1 的语义。
+        """
+        versions: list[int] = []
+        directory = self.store.resolve(RECORD_AREA)
+        if directory.exists():
+            for p in directory.glob("v*.md"):
+                n = _version_from_name(p.name)
+                if n is not None:
+                    versions.append(n)
+        for entry in self.store.manifest():
+            if entry.path.startswith(f"{RECORD_AREA}/v") and entry.path.endswith(".md"):
+                n = _version_from_name(Path(entry.path).name)
+                if n is not None:
+                    versions.append(n)
+        if not versions:
+            raise ExportServiceError(
+                "没有找到任何记录稿（record/v*.md）。请先运行 review 生成记录稿。"
+            )
+        return max(versions)
+
+    # --- 字体预检 -------------------------------------------------------
+
+    def font_report(self, *, installed: set[str] | None = None):
+        """导出前的字体预检（F5.7 / R7）。"""
+        return check_fonts(policy=self.font_policy, installed=installed)
+
+    def system_fonts_payload(self) -> dict:
+        """`GET /system/fonts` 的响应体（SAD §8.1）。"""
+        return build_check_result_json(self.font_report())
+
+    # --- 导出 -----------------------------------------------------------
+
+    def export_docx(
+        self,
+        version: int | None = None,
+        *,
+        now: str | None = None,
+        installed_fonts: set[str] | None = None,
+        convert_doc: bool | None = None,
+        write_audit: bool = True,
+    ) -> ExportResult:
+        """导出 docx。
+
+        Args:
+            version: 记录稿版本；`None` 取最新。
+            installed_fonts: 显式指定已装字体（测试用）；`None` 走真实探测。
+            convert_doc: 是否同时转 `.doc`；`None` 取实例配置。
+            write_audit: 是否留痕（测试单测渲染时可在外面关掉）。
+        """
+        if version is None:
+            version = self.latest_record_version()
+
+        markdown = self.read_record(version)
+        content_sha = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+        idem = make_idempotency_key(self.store.meeting_id, version, content_sha)
+
+        # 字体策略 fail 时，在渲染之前就拦下（渲染里也会拦，这里是双保险）
+        report = self.font_report(installed=installed_fonts)
+        if policy_blocks_export(report):
+            detail = precheck_policy_error(report)
+            if write_audit:
+                self._audit_export(version, None, "failure",
+                                   extra={"reason": detail, "policy": self.font_policy})
+            raise ExportBlockedError(detail)
+
+        # --- 渲染 ---
+        options = RenderOptions(
+            font_policy=self.font_policy,
+            normalize_text=self.normalize,
+            auto_numbering=self.auto_numbering,
+            font_report=report,
+        )
+        try:
+            rendered = render_markdown_to_docx(markdown, options=options)
+        except FontMissingError as exc:
+            if write_audit:
+                self._audit_export(version, None, "failure",
+                                   extra={"reason": str(exc)})
+            raise ExportBlockedError(str(exc)) from exc
+
+        payload = _docx_bytes(rendered)
+        rel_path = f"{EXPORT_AREA}/{EXPORT_NAME_TEMPLATE.format(meeting_id=self.store.meeting_id, version=version)}"
+
+        # --- 幂等：同名且明文哈希一致 -> 复用，不重复登记 ---
+        reused = self._existing_plain_sha(rel_path) == hashlib.sha256(payload).hexdigest()
+        if reused:
+            stored = self._stored_of(rel_path)
+        else:
+            stored = self.store.write(rel_path, payload, stage="export")
+
+        warnings = list(rendered.warnings)
+
+        # --- .doc 转换（可选） ---
+        conv = DocConversion()
+        want_doc = self.enable_doc_export if convert_doc is None else convert_doc
+        if want_doc:
+            conv = self.convert_to_doc(rel_path)
+            if conv.status == DOC_STATUS_FAILED:
+                warnings.append(f".doc 转换失败：{conv.reason}")
+
+        result = ExportResult(
+            meeting_id=self.store.meeting_id,
+            version=version,
+            rel_path=stored.rel_path,
+            sha256=stored.sha256,
+            size_bytes=stored.size_bytes,
+            encrypted=stored.encrypted,
+            idempotency_key=idem,
+            reused=reused,
+            warnings=tuple(warnings),
+            font_report=report,
+            doc_conversion=conv,
+        )
+
+        if write_audit:
+            self._audit_export(
+                version, rel_path, "success",
+                extra={
+                    "sha256": stored.sha256[:16],
+                    "idempotency_key": idem,
+                    "reused": reused,
+                    "doc_status": conv.status,
+                },
+            )
+        return result
+
+    # --- .doc 转换（可选，独立进程） ------------------------------------
+
+    def convert_to_doc(self, docx_rel_path: str) -> DocConversion:
+        """用 LibreOffice 无头模式把 docx 转成 doc。
+
+        **必须独立进程**（GPL 隔离，SAD §6）：我们只是调用它，
+        不链接、不修改、不随包分发 —— 这样本项目的许可不被 GPL 传染。
+
+        `soffice` 不存在时返回 `skipped` 而不是抛错：一期 `.doc` 是
+        可选兼容格式，"目标机没装 LibreOffice"是一个完全正常的
+        部署形态（部署手册 §2.1 的清单里就没把 LO 列为必需项）。
+        """
+        soffice = self.soffice_path or shutil.which("soffice")
+        if not soffice or not Path(soffice).exists():
+            return DocConversion(
+                status=DOC_STATUS_SKIPPED,
+                reason="未找到 soffice（LibreOffice）。.doc 为可选格式，docx 已正常导出。",
+            )
+
+        docx_abs = self.store.resolve(docx_rel_path)
+        if not docx_abs.exists():
+            return DocConversion(status=DOC_STATUS_FAILED, reason=f"源文件不存在：{docx_rel_path}")
+
+        # 输出到 store 的 export 目录（明文区）。转换在**同一个目录**里做，
+        # 免得 LO 把结果丢到某个系统临时目录后我们再猜它在哪。
+        out_dir = docx_abs.parent
+        try:
+            proc = subprocess.run(
+                [soffice, "--headless", "--convert-to", "doc",
+                 "--outdir", str(out_dir), str(docx_abs)],
+                capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=180,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return DocConversion(status=DOC_STATUS_FAILED, reason=f"调用 soffice 失败：{exc}")
+
+        produced = out_dir / (docx_abs.stem + DOC_SUFFIX)
+        if proc.returncode != 0 or not produced.exists():
+            tail = (proc.stderr or proc.stdout or "").strip().splitlines()
+            return DocConversion(
+                status=DOC_STATUS_FAILED,
+                reason=f"soffice 返回 {proc.returncode}：{tail[-1] if tail else '无输出'}",
+            )
+
+        # 手动登记进 manifest（LO 自己不会写我们的 manifest）
+        rel = f"{EXPORT_AREA}/{produced.name}"
+        data = produced.read_bytes()
+        self.store.write(rel, data, stage="export")
+        return DocConversion(status=DOC_STATUS_OK, rel_path=rel)
+
+    # --- 撤销导出（F5.8） -----------------------------------------------
+
+    def undo_export(self, rel_path: str) -> bool:
+        """撤销一次导出（删除产物 + 留痕）。
+
+        这是 F5.8"可撤销"的落点。删文件本身由 `store.delete()`
+        同时清 manifest，所以撤销后 `verify_manifest()` 仍然干净。
+        """
+        if not rel_path.startswith(f"{EXPORT_AREA}/"):
+            raise ExportServiceError(
+                f"只能撤销 {EXPORT_AREA}/ 下的文件，收到：{rel_path}"
+            )
+        existed = self.store.exists(rel_path)
+        if existed:
+            self.store.delete(rel_path)
+        self.audit.export_event(
+            self.operator, self.store.meeting_id,
+            files=[rel_path], undo=True,
+            detail={"removed": existed},
+        )
+        return existed
+
+    # --- 内部工具 -------------------------------------------------------
+
+    def _existing_plain_sha(self, rel_path: str) -> str | None:
+        for entry in self.store.manifest():
+            if entry.path == rel_path:
+                return entry.plain_sha256
+        return None
+
+    def _stored_of(self, rel_path: str) -> StoredFile:
+        """幂等命中时，从磁盘与 manifest 重建 StoredFile。"""
+        abs_path = self.store.resolve(rel_path)
+        data = abs_path.read_bytes()
+        plain = hashlib.sha256(data).hexdigest()
+        entry = next((e for e in self.store.manifest() if e.path == rel_path), None)
+        return StoredFile(
+            rel_path=rel_path,
+            abs_path=abs_path,
+            sha256=entry.sha256 if entry else plain,
+            plain_sha256=entry.plain_sha256 if entry else plain,
+            encrypted=False,          # export 是明文区
+            size_bytes=abs_path.stat().st_size,
+        )
+
+    def _audit_export(self, version: int, rel_path: str | None,
+                      result: str, *, extra: Mapping[str, Any] | None = None) -> None:
+        """导出留痕。**只记路径与统计，绝不记正文**（部署手册 §5.3）。"""
+        detail: dict[str, Any] = {"version": version}
+        if rel_path:
+            detail["path"] = rel_path
+        if extra:
+            detail.update({k: v for k, v in extra.items() if v is not None})
+        self.audit.export_event(
+            self.operator, self.store.meeting_id,
+            files=[rel_path] if rel_path else None,
+            detail=detail, result=result,
+        )
+
+    def current_meeting_status(self) -> str | None:
+        with connect_ctx(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT status FROM meeting WHERE meeting_id = ?",
+                (self.store.meeting_id,),
+            ).fetchone()
+        return row["status"] if row else None
+
+
+def _docx_bytes(rendered: RenderResult) -> bytes:
+    """把 Document 序列化成 bytes，**结果可复现**。
+
+    python-docx 的 `save()` 只接受路径或类文件对象 —— 没有"返回 bytes"
+    的 API。用 `io.BytesIO` 而不是先写临时文件：导出目录是明文区，
+    多一步临时文件就多一处可能忘记清理的**未加密残留**。
+
+    ⚠️ 必须走 `_docx_backend.save_bytes` 而不是直接 `doc.save(buf)`：
+    后者写进 ZIP 条目的时间戳是**当前本地时间**，导致内容相同的两次
+    渲染产出的字节不同，`reused` 判定随之失效（详见该函数的注释）。
+    """
+    from mmwf.domain.docx._docx_backend import save_bytes
+
+    return save_bytes(rendered.doc)
+
+
+def _version_from_name(name: str) -> int | None:
+    """`v3.md` -> `3`；不是这个形状返回 None。"""
+    stem = Path(name).stem
+    if not stem.startswith("v"):
+        return None
+    try:
+        return int(stem[1:])
+    except ValueError:
+        return None
+
+
+def judge_docx(
+    docx_bytes: bytes,
+    *,
+    checks: tuple[str, ...] = (),
+) -> list[str]:
+    """对 docx 字节做一轮快速自检，返回问题清单（空 = 通过）。
+
+    这是给 service 层用的**轻量**校验：导出后立刻确认"我写出去的这份
+    文件确实是合规的"。完整的逐项对照在 `tools/verify_docx_style.py`，
+    这个函数只做最要紧的三条（表格零缩进、中文字体、表格边框），
+    因为它们在导出链路上最容易因为"某个补丁没被调用"而静默失效。
+    """
+    problems: list[str] = []
+    try:
+        import io
+        import zipfile
+        from lxml import etree
+    except ImportError as exc:  # pragma: no cover
+        return [f"无法自检（缺 lxml）：{exc}"]
+
+    W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    try:
+        with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
+            xml = z.read("word/document.xml")
+    except Exception as exc:  # noqa: BLE001 - 自检不该抛
+        return [f"文档无法解压：{exc}"]
+
+    root = etree.fromstring(xml)
+
+    for tbl in root.iter(W + "tbl"):
+        for ind in tbl.iter(W + "ind"):
+            for attr in ("firstLineChars", "firstLine", "leftChars", "left"):
+                v = ind.get(W + attr)
+                if v and v != "0":
+                    problems.append(f"表格内段落缩进未清零：w:{attr}={v}")
+        tbl_pr = tbl.find(W + "tblPr")
+        if tbl_pr is None or tbl_pr.find(W + "tblBorders") is None:
+            problems.append("表格缺少 w:tblBorders（全边框未注入）")
+
+    if "w:eastAsia" not in xml.decode("utf-8"):
+        problems.append("文档中没有 w:eastAsia（中文字体未生效）")
+
+    return problems
+
+
+def make_export_service(
+    meeting_id: str,
+    settings,
+    *,
+    audit: AuditLogger | None = None,
+    operator: str = "system",
+    encrypt_enabled: bool = True,
+) -> ExportService:
+    """从配置构造导出服务（与 `make_review_service` 同款签名）。
+
+    读的配置项（都在 `Settings` 的顶层字段上）：
+        `settings.app.data_dir`                  —— 数据根目录
+        `settings.export.font_fallback_policy`   —— warn|fallback|fail
+        `settings.export.soffice_path`           —— LibreOffice 路径
+        `settings.export.enable_doc_export`      —— 是否转 .doc
+
+    注意配置的形状：`app.yaml` / `models.yaml` 在**加载时被拍平**了 ——
+    `models.yaml` 的 `export:` 段成了 `settings.export`，**不是**
+    `settings.models.export`（`Settings` 里没有 `models` 这个字段）。
+    `soffice_path` 是 `Path` 类型，要 `str()` 一下再交给 subprocess。
+    """
+    from mmwf.infra.filestore import make_filestore
+
+    data_dir = settings.resolve_path(settings.app.data_dir)
+    store = make_filestore(meeting_id, data_dir, encrypt_enabled=encrypt_enabled)
+
+    export_cfg = settings.export
+    soffice = getattr(export_cfg, "soffice_path", None)
+    return ExportService(
+        store,
+        db_path=data_dir / "mmwf.db",
+        audit=audit,
+        operator=operator,
+        font_policy=getattr(export_cfg, "font_fallback_policy", DEFAULT_FONT_POLICY),
+        soffice_path=str(soffice) if soffice else None,
+        enable_doc_export=bool(getattr(export_cfg, "enable_doc_export", False)),
+    )
+
+
+__all__ = [
+    "DEFAULT_FONT_POLICY",
+    "DOC_STATUS_FAILED",
+    "DOC_STATUS_OK",
+    "DOC_STATUS_SKIPPED",
+    "EXPORT_AREA",
+    "EXPORT_NAME_TEMPLATE",
+    "DocConversion",
+    "ExportBlockedError",
+    "ExportResult",
+    "ExportService",
+    "ExportServiceError",
+    "judge_docx",
+    "make_export_service",
+    "make_idempotency_key",
+]

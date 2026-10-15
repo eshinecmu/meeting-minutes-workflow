@@ -1,0 +1,169 @@
+{
+  "01_title_and_headings": {
+    "file": "01_title_and_headings.docx",
+    "pins": [
+      "P01 标题字体=方正小标宋简体",
+      "P02 标题字号=22pt/44",
+      "P03 标题居中",
+      "标题不加粗",
+      "P04 一级标题=黑体16pt",
+      "P15 中文编号 一、/（一）"
+    ],
+    "summary": {
+      "tables": 0,
+      "table_indent_elements": 0,
+      "table_indent_violations": [],
+      "fonts_used": [
+        "方正小标宋简体",
+        "黑体",
+        "仿宋_GB2312",
+        "楷体_GB2312"
+      ],
+      "line_spacing": {
+        "exact:576": 4
+      },
+      "first_line_chars_200": 7,
+      "has_page_number_field": true,
+      "size_bytes": 37740
+    },
+    "ok": true,
+    "errors": []
+  },
+  "02_body_layout": {
+    "file": "02_body_layout.docx",
+    "pins": [
+      "P06 正文=仿宋_GB2312",
+      "P07 正文字号=16pt/32",
+      "P08 首行缩进 2 字符 (firstLineChars=200)",
+      "P09 固定行距 28.8pt (exact:576)",
+      "P17 页边距 3.7/3.5/2.8/2.6cm"
+    ],
+    "summary": {
+      "tables": 0,
+      "table_indent_elements": 0,
+      "table_indent_violations": [],
+      "fonts_used": [
+        "方正小标宋简体",
+        "黑体",
+        "仿宋_GB2312",
+        "楷体_GB2312"
+      ],
+      "line_spacing": {
+        "exact:576": 7
+      },
+      "first_line_chars_200": 9,
+      "has_page_number_field": true,
+      "size_bytes": 37899
+    },
+    "ok": true,
+    "errors": []
+  },
+  "03_table_no_penetration": {
+    "file": "03_table_no_penetration.docx",
+    "pins": [
+      "★ P10 表格内 w:ind 八项全为 0（C15）",
+      "P11 表格六边全边框",
+      "P12 表头黑体加粗 12pt",
+      "P14 表格后有空段",
+      "★ 对照：正文缩进仍为 200"
+    ],
+    "summary": {
+      "tables": 2,
+      "table_indent_elements": 24,
+      "table_indent_violations": [],
+      "fonts_used": [
+        "方正小标宋简体",
+        "黑体",
+        "仿宋_GB2312"
+      ],
+      "line_spacing": {
+        "exact:576": 3
+      },
+      "first_line_chars_200": 5,
+      "has_page_number_field": true,
+      "size_bytes": 38149
+    },
+    "ok": true,
+    "errors": []
+  },
+  "04_page_number": {
+    "file": "04_page_number.docx",
+    "pins": [
+      "P16 页脚含 PAGE 域",
+      "域为三段式 begin/separate/end",
+      "PAGE 写在 w:instrText 而非 w:t"
+    ],
+    "summary": {
+      "tables": 0,
+      "table_indent_elements": 0,
+      "table_indent_violations": [],
+      "fonts_used": [
+        "方正小标宋简体",
+        "黑体",
+        "仿宋_GB2312",
+        "楷体_GB2312"
+      ],
+      "line_spacing": {
+        "exact:576": 3
+      },
+      "first_line_chars_200": 5,
+      "has_page_number_field": true,
+      "size_bytes": 37673
+    },
+    "ok": true,
+    "errors": []
+  },
+  "05_mixed_script": {
+    "file": "05_mixed_script.docx",
+    "pins": [
+      "P18 中英之间加空格",
+      "P19 英文引号 -> 中文引号",
+      "多重空格压缩为一个"
+    ],
+    "summary": {
+      "tables": 0,
+      "table_indent_elements": 0,
+      "table_indent_violations": [],
+      "fonts_used": [
+        "方正小标宋简体",
+        "黑体",
+        "仿宋_GB2312"
+      ],
+      "line_spacing": {
+        "exact:576": 4
+      },
+      "first_line_chars_200": 7,
+      "has_page_number_field": true,
+      "size_bytes": 37735
+    },
+    "ok": true,
+    "errors": []
+  },
+  "06_edge_cases": {
+    "file": "06_edge_cases.docx",
+    "pins": [
+      "超长表格不塌陷",
+      "特殊字符 XML 未损坏",
+      "无表格章节也能通过校验"
+    ],
+    "summary": {
+      "tables": 1,
+      "table_indent_elements": 20,
+      "table_indent_violations": [],
+      "fonts_used": [
+        "方正小标宋简体",
+        "黑体",
+        "仿宋_GB2312",
+        "楷体_GB2312"
+      ],
+      "line_spacing": {
+        "exact:576": 4
+      },
+      "first_line_chars_200": 7,
+      "has_page_number_field": true,
+      "size_bytes": 38136
+    },
+    "ok": true,
+    "errors": []
+  }
+}

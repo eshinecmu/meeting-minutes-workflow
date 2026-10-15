@@ -1,0 +1,64 @@
+# 运行时数据（含加密的音频与文稿）
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# 模型权重（体积大，不纳入版本管理）
+models/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / Electron
+node_modules/
+dist/
+out/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 本地临时
+*.log
+.tmp/
+
+# T1-05 验收过程中生成的样本音频与耗时记录（由 accept_t1_05.py 自动重建）
+# 说明：部署方应放入**真实**的 tests/fixtures/audio/sample_5min.m4a；
+# 自动生成的等价 wav 体积近 10MB，不入版本库。
+tests/fixtures/audio/*.wav
+tests/fixtures/transcripts/t1_05_timing.json
+tests/fixtures/transcripts/t1_06_merge.json
+
+# 重构过程备份（含旧代码 .bak 快照与本地一次性脚本，不入版本库）
+.refactor_backup/
+
+# 密钥与环境变量（安全兜底，防止误提交）
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# 补丁与合并残留
+*.orig
+*.rej
+*.bak
+
+# 构建中间产物
+build/
+*.spec
+
+# 系统与 Office 临时文件
+Thumbs.db
+~$*

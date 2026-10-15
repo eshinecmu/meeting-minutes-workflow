@@ -1,0 +1,30 @@
+# 统一行尾：仓库内一律以 LF 存储，检出时由 Git 按平台处理
+* text=auto
+
+# 显式声明二进制（避免被当作文本做行尾转换 / diff）
+*.docx binary
+*.xlsx binary
+*.wav binary
+*.m4a binary
+*.mp3 binary
+*.db binary
+*.pak binary
+*.exe binary
+*.dll binary
+*.pyd binary
+*.png binary
+*.jpg binary
+*.ico binary
+
+# 脚本与配置统一 LF
+*.py text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.txt text eol=lf

@@ -1,0 +1,65 @@
+# electron-builder 配置（T1 打包）
+#
+# 目标：**免安装目录**（部署手册 §9.2 交付物 1「应用安装包 / 形式：目录」）。
+# 所以 win.target 用 `dir`，**不做 NSIS 安装包** ——
+# 目标机是内网办公机，装"安装程序"反而多一道审批；解压即用最合适。
+#
+# ★ extraResources 把三样东西塞进 `resources/`
+#   python/  —— 内嵌 Python 运行时（含全部依赖），目标机**不需要装 Python**
+#   app/     —— mmwf 应用代码
+#   config/  —— 配置
+#
+# ⚠️ `config` 必须在 `resources/config`（不是 `resources/app/config`）：
+#    `settings.py::_find_config_dir` 默认取 `parents[2]/config`，
+#    应用在 `resources/app/mmwf/` 时 `parents[2]` 就是 `resources/`。
+#    放错位置的表现是启动即报"缺少 config/app.yaml"，且报错不会告诉你
+#    是层级错了。详见 tools/build_portable.py 的 docstring。
+
+appId: cn.mmwf.desktop
+#: ★ 用 ASCII 名（`mmwf`）而不是中文：exe 文件名、安装路径、
+#: 日志路径都会用到它，中文在这些地方容易出编码问题。
+#: 界面上显示的"会议纪要工作台"由 main.js 的窗口 title 控制，不受影响。
+productName: mmwf
+
+directories:
+  output: ../../dist
+  buildResources: build
+
+files:
+  - main.js
+  - preload.js
+  - renderer/**/*
+  - package.json
+
+extraResources:
+  - from: ../../build/stage/python
+    to: python
+  - from: ../../build/stage/app
+    to: app
+  - from: ../../build/stage/config
+    to: config
+
+win:
+  target:
+    - target: dir
+      arch:
+        - x64
+  # ★ 不做代码签名：本机没有证书，且内网分发的产物由单位自行校验哈希
+  #   （部署手册 §9.1 的哈希清单流程）。让 electron-builder 去要证书
+  #   只会让构建失败。
+  signAndEditExecutable: true
+  # 允许在没有签名证书时继续（否则会直接报错退出）
+  forceCodeSigning: false
+
+# ★ 不要从源码重建原生依赖（本项目没有原生模块），
+#   也**不要**让 electron-builder 去联网找依赖 —— 构建期保持离线。
+npmRebuild: false
+buildDependenciesFromSource: false
+
+#: asar 保持默认开启（true）：把 JS 打成一个归档，
+#: 避免用户误改 main.js。资源（python/app/config）走 extraResources，
+#: 本来就在 asar 之外。
+asar: true
+
+#: 关掉自动更新 —— 离线环境，且本项目明确不允许外发请求。
+publish: null

@@ -1,0 +1,51 @@
+meta:
+  template_id: tpl-coordination-v1
+  name: 协调会议纪要
+  meeting_kind: coordination
+  version: 1
+
+required_elements:
+  - key: title
+    label: 标题
+    pattern: "^.{4,30}$"
+  - key: meeting_time
+    label: 会议时间
+  - key: location
+    label: 会议地点
+  - key: host
+    label: 主持人
+  - key: attendees
+    label: 参会人员
+    min_count: 2
+  - key: topics
+    label: 议项
+    min_count: 1
+  - key: resolutions
+    label: 议定事项
+    min_count: 1
+
+section_order:
+  - 会议基本情况
+  - 协调事项及各方意见
+  - 议定事项
+  - 责任分工与时限
+
+style:
+  readings_allowed:
+    - 会议认为
+    - 会议指出
+    - 会议强调
+    - 会议要求
+    - 会议议定
+    - 会议同意
+    - 经协调
+    - 会议明确
+  readings_forbidden:
+    - 大家觉得
+    - 差不多
+    - 可能吧
+    - 应该是
+    - 反正
+    - 搞定
+    - 弄一下
+    - 有点问题

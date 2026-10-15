@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!--
+    ⚠️ CSP 刻意收紧：渲染层只允许加载**本包内**的脚本与样式，
+    并且只允许连**本机回环**的后端。
+    离线是本产品的合规红线（数据不出设备），一条宽松的 CSP 就能把它破掉。
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none';
+                 script-src 'self';
+                 style-src 'self';
+                 connect-src http://127.0.0.1:*;
+                 img-src 'self' data:;" />
+  <title>会议纪要工作台</title>
+  <link rel="stylesheet" href="styles/tokens.css" />
+  <link rel="stylesheet" href="styles/app.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <span class="title">会议纪要工作台</span>
+      <span class="spacer"></span>
+      <span class="operator" id="operator-label"></span>
+    </header>
+
+    <!-- 三步操作：投递 → 确认 → 导出（N3.x：任何额外步骤都需论证） -->
+    <nav class="steps" id="steps" hidden>
+      <div class="step" data-step="submit">① 投递音频</div>
+      <div class="step" data-step="gate">② 确认内容</div>
+      <div class="step" data-step="export">③ 导出文档</div>
+    </nav>
+
+    <main class="content" id="view">
+      <!-- 首屏：操作人 + 可选的文字稿投递 -->
+      <section class="card" id="boot">
+        <h2>开始使用</h2>
+        <div class="field">
+          <label for="operator">操作人</label>
+          <input type="text" id="operator" placeholder="请输入您的姓名" />
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" id="enter">进入工作台</button>
+          <span class="operator" id="boot-hint"></span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

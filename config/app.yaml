@@ -1,0 +1,27 @@
+app:
+  name: mmwf
+  version: "1.0.0"
+  host: "127.0.0.1"          # 硬编码为回环，不允许改（SAD C11）
+  port: 0                     # 0 = 随机分配
+  data_dir: "./data"
+  log_dir: "./data/logs"
+  max_concurrent_tasks: 1
+  audit_retention_days: 1095
+
+# ffmpeg / ffprobe 的位置（T1-06）
+#
+# 留空 = 走 PATH 查找，再退到 imageio-ffmpeg 兜底（仅开发环境）。
+# 涉密部署**必须**在这里填绝对路径：ffmpeg 由部署方交付并放在受控目录，
+# 不进系统 PATH（部署手册 §2.1 交付包清单第 7 项，附 SHA256）。
+#
+#   ffmpeg_path: "C:/mmwf/bin/ffmpeg.exe"
+#   ffprobe_path: "C:/mmwf/bin/ffprobe.exe"   # 与 ffmpeg 同目录时可省略，会自动猜
+#
+# 为什么必须显式可配：ffmpeg 是外部程序不是 pip 依赖，装在哪儿由部署方决定；
+# 硬编码路径会在换机器时炸掉。
+audio:
+  ffmpeg_path: null
+  ffprobe_path: null
+  # 单次 ffmpeg/ffprobe 调用超时（秒）。切分后的单次调用很快，
+  # 这个值是防"进程卡死拖垮整个任务"。
+  timeout_seconds: 600

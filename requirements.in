@@ -1,0 +1,225 @@
+# 运行期依赖（按施工卡阶段递增）
+#
+# T1-01 骨架与配置中心
+pydantic>=2.9,<3
+pyyaml>=6.0,<7
+
+# T1-02 数据模型与建表（sqlalchemy 见 pyproject 的 infra extra；
+#        核心链路只用 sqlite3 标准库，sqlalchemy 仅在需要 Core 时惰性导入）
+
+# T1-03 文件仓储与加密
+cryptography>=43,<44
+
+# T1-04 审计日志
+# 无新增第三方依赖：审计走 sqlite3 标准库 + hashlib，链式哈希与触发器
+# 都在 infra/audit.py 与 001_init.sql 内实现（SAD §7 要求核心链路不引入 ORM）
+
+# T1-05 转写适配器
+# 核心链路**无新增第三方依赖**：适配器本身只用 inspect / wave（标准库），
+# 领域类型只用 dataclasses。这正是"引擎可替换"的体现——换引擎不动上层代码。
+#
+# 真引擎（funasr + torch，合计数 GB）刻意放在 pyproject 的 asr extra，
+# 按施工卡要求"等 T1-05 开工时按当时的硬件条件单独装"：
+#     pip install -e ".[asr]"
+# 未安装时：
+#   · tests/contract 的 real_model 用例自动 skip
+#   · tools/accept_t1_05.py 走离线夹具（tests/fixtures/asr/fake_engine.py）
+#   · tools/accept_t1_05.py --real-model 如实报告"环境未就绪，跳过"
+
+# T1-06 音频接入与切分
+# 核心链路**无新增第三方依赖**：切分计划与重叠去重是纯 Python（标准库 re/dataclasses），
+# ffmpeg/ffprobe 是**外部程序**不是 pip 包 —— 由部署方按部署手册 §2.1 第 7 项交付，
+# 附 SHA256，放在受控目录（涉密环境不进 PATH），位置在 config/app.yaml 的 audio 段指定。
+#
+# 开发/CI 环境的兜底（**不用于涉密部署**）：
+#     pip install imageio-ffmpeg -i https://pypi.org/simple
+# 该包自带一份静态 ffmpeg（7.1），但**不含 ffprobe** —— 时长探测会退到
+# 解析 ffmpeg 自身的 stderr `Duration:` 行。已列在 pyproject 的 audio extra。
+# 注意：清华镜像没有这个包，必须走官方源。
+
+# T1-07 术语库与热词注入
+# 核心链路**无新增第三方依赖**：匹配、替换、热词导出与 CSV 读写
+# 全部走标准库（re / csv / json / sqlite3 / dataclasses）。
+# 术语库是长期资产，越少依赖越好 —— 十年后还要能打开。
+#
+# 刻意**不引入** pandas / numpy：
+#   · 术语库规模是"几百到几千条"，纯 Python 完全够；
+#   · 引进来会让"离线 + 涉密环境交付"多背几十 MB，
+#     与部署手册"最小依赖面"的要求相悖。
+#
+# 热词上限 2000 是**引擎侧约束**（超限可能整体静默失效），
+# 不是本项目的性能考虑 —— 所以它在 config/extraction.yaml 里可热改，
+# 而不是写死在代码，详见 domain/glossary/matcher.DEFAULT_HOTWORD_LIMIT。
+
+# T1-08 转写稿复核与记录稿生成
+# 核心链路**无新增第三方依赖**：分流判据（confidence / flags / 长度）与
+# 记录稿渲染（字符串拼接）都是纯 Python，落盘走 filestore、留痕走 audit，
+# 全在本项目既有模块内完成。本卡新增的只有 transcript_segment.flags
+# 这个**已有列**在内存类型上的映射，没有建表变更、没有新依赖。
+#
+# 沿用 T1-07 的取舍，继续**不引入** pandas / numpy / jinja2：
+#   · 记录稿是"八项元信息 + 顺序拼接的正文 + 待核对清单"，
+#     用 f-string 拼比套一层模板引擎更可控 —— 模板引擎的空白处理
+#     会把段落间空行吃掉或翻倍，而记录稿是要打印归档的；
+#   · 依赖越少，涉密环境的交付面越小。
+
+# T1-09 公文版式映射与导出（docx）
+#
+# ★ 这是自 T1-03（cryptography）以来**第一张引入新运行期依赖**的卡。
+python-docx>=1.1,<2
+lxml>=5.2,<6
+#
+# 为什么必须引 python-docx，而不像前几张卡那样"纯标准库搞定"：
+#   GB/T 9704 版式需要写入 OOXML 的 `w:rFonts/@w:eastAsia`、
+#   `w:ind/@w:firstLineChars`、`w:tblBorders`、`w:spacing/@w:lineRule`
+#   等**中文排版专属属性**。手写 OOXML 要自己处理包结构
+#   （[Content_Types].xml / rels / styles）、zip 条目、XML 转义，
+#   还得保证 Word 不报"文档已损坏" —— 那是一个需要长期维护的
+#   独立项目，不是一张卡的事。SAD §6 明确把 python-docx 列为本项目依赖。
+#   lxml 是 python-docx 的硬依赖（它用 lxml 做 OOXML 解析），
+#   这里显式钉版本是为了让离线 wheel 仓库可复现（部署手册 §2.3）。
+#
+# 安装： pip install -e ".[docx]"
+#
+# ── 隔离约束（SAD §4，check_layers.py 的 C01）─────────────────────────
+# `docx` 已加入领域层**禁止 import** 名单，仅 `/domain/docx/` 一个目录放行，
+# 且包内**只有 `_docx_backend.py` 允许真正 import docx**（其余模块经它转发）。
+# 验证： python tools/accept_t1_09.py 的"附加 5"（用 AST 检查，不靠字符串匹配）
+#       python tools/check_layers.py
+#
+# ── 刻意**不引入**的东西 ───────────────────────────────────────────────
+#   · docxtpl / python-docx-template：本项目是**从零注入版式**，
+#     不需要"往已有模板里填空"。引进来等于多背一个 jinja2 依赖链，
+#     而模板里的既有样式反而会和 GB 注入打架（正是
+#     `_strip_default_styles` 要清掉的那类东西）。
+#   · pypandoc / pandoc：依赖外部 pandoc 二进制，与"离线受控交付"冲突。
+#   · docx2pdf / Word COM：会拉起 Office 进程，涉密机器上不可控。
+#     PDF 导出（F5.9）本就排在二期。
+#
+# ── 不通过 pip 管理的那个依赖 ─────────────────────────────────────────
+# `.doc` 转换走 LibreOffice 无头模式：
+#     soffice --headless --convert-to doc --outdir <dir> <docx>
+# 它是**外部程序**，不作为 pip 包管理，原因有两条：
+#   ① GPL 隔离（SAD §6/§7）：必须作为**独立进程**调用，不得链接进本进程；
+#   ② 一期的 `.doc` 是可选输出，缺失时应记 `skipped` 而非失败
+#      （见 app/services/export.py 的 DocConversion）。
+# 路径由 config/models.yaml 的 export.soffice_path 指定，可热改。
+
+# T1-10 流水线编排（LangGraph 状态机）
+#
+# ★ 这是自 T1-03/T1-09 以来**又一张引入新运行期依赖**的卡，
+#   但注意：**只有编排壳引入依赖，业务节点一个都没引**。
+langgraph>=0.2,<0.3
+langgraph-checkpoint-sqlite>=2.0,<3
+#
+# 为什么必须引 langgraph：
+#   SAD §5.1 把"状态机 + 检查点 + 中断恢复"列为架构级要求。
+#   自己手写"断点续跑 + 闸口中断 + 幂等"三件事，等价于重写一个
+#   带持久化的工作流引擎 —— 而本卡真正的价值在于**业务语义**
+#   （三闸口决策、返工边界、幂等副作用），不在于造引擎。
+#   引 langgraph 换来的是：状态增量合并、可中断可恢复的执行图、
+#   以及与 checkpoint 库的既定契约；自研的成本远高于收益。
+#   langgraph-checkpoint-sqlite 提供 SqliteSaver —— 与项目
+#   "核心链路只用 sqlite3 标准库、不引外部服务"的约束一致
+#   （不引 redis / postgres 做检查点存储）。
+#
+# ★ 与 C01 的关系：langgraph 属于**应用层**（graph/），
+#   绝不允许出现在领域层。check_layers.py 已把 langgraph 加入
+#   领域层禁止 import 名单 —— 领域层只认 dataclasses 与标准库。
+#   验证： python tools/check_layers.py
+#          python tools/check_deps.py
+#
+# ── 刻意**不引入**的东西 ───────────────────────────────────────────────
+#   · langchain / langchain-core 全家桶：本卡只用 langgraph 的
+#     StateGraph + checkpointer，不碰 chain / agent / tool 那一套。
+#     引进来会连带拉入一大批本卡用不到的包，与部署手册
+#     "最小依赖面"的要求相悖。
+#   · langgraph-checkpoint-postgres / redis：检查点存本地 SQLite，
+#     涉密环境不引外部服务（部署手册 §2）。
+#   · langsmith / 任何遥测 SDK：违反 C09/C10（禁止遥测组件）。
+#
+# 安装： pip install -e ".[graph]"
+# 未安装时：graph 包惰性导入，图相关模块 import 会给出明确提示，
+#          不装 graph 也能跑前九张卡的测试与验收。
+#
+# T1-11 服务层与本地 API
+#
+# ★ 又一张引入新运行期依赖的卡：整个 API 层就是这三个包。
+#   注意 fastapi / uvicorn / httpx 都在 pyproject 的 **api extra** 里，
+#   不在本文件的运行期基线 —— 因为本项目的核心价值链路
+#   （领域 + 编排 + 导出）**不需要 HTTP 服务**就能跑完并验收。
+fastapi>=0.115,<1
+uvicorn>=0.32,<1
+httpx>=0.27,<1
+#
+# 为什么必须引 fastapi：
+#   SAD §9 把"接口契约 + 统一信封 + 错误码落地"列为架构级要求，
+#   而 T1-12 的 Electron 前端要调的是一批定型 JSON 接口。
+#   FastAPI 的依赖注入正好承载了本卡最需要的东西：
+#   **把令牌校验写成路由器级依赖**，新增端点默认就是受保护的 ——
+#   这是"安全的默认值"，而手写 WSGI 路由要靠自觉给每个 handler
+#   加装饰器，一定会漏。
+#
+# 为什么必须引 uvicorn：
+#   ASGI 服务器。**只绑 127.0.0.1**（C11），端口由 OS 分配
+#   （`bind 0` 是唯一无竞态的选端口方式），实际端口写进
+#   `%LOCALAPPDATA%/mmwf/port` 供 Electron 读。
+#
+# httpx 的用途是**测试**（FastAPI 的 TestClient 依赖它），
+# 不是为了发外部请求 —— 本项目离线运行，运行期一个外部请求都不发。
+#
+# ── 刻意**不引入**的东西 ───────────────────────────────────────────────
+#   · pydantic 的 fastapi 相关插件 / sqlmodel：数据模型已在 T1-02 用
+#     原生 sqlite3 落地，不再叠一层 ORM。
+#   · python-multipart：本轮 10 个端点没有文件上传（音频走**路径**投递，
+#     由 Electron 主进程读本地文件系统）；等 T1-12 若改走 multipart 再加。
+#   · uvicorn[standard]（含 uvloop / httptools / watchfiles）：
+#     纯 Python 事件循环对本机单用户场景完全够用，且**跨平台 wheel
+#     更少** —— 离线受控环境装依赖越少越稳。
+#   · ujson / orjson：响应是小小的信封，标准库 json 足够。
+#
+# 安装： pip install -e ".[api]"
+# 未安装时：`api/` 与 `main.py` 惰性导入，import 会给出明确提示；
+#          前十一张卡的业务测试与 accept_t1_01..10 不受影响。
+#
+# ★ 分层约束：fastapi 属**应用层**，已加入 check_layers.py 的
+#   领域层禁止 import 名单。领域层只认 dataclasses 与标准库。
+#   验证： python tools/check_layers.py && python tools/check_deps.py
+#
+
+# T1-13 合规自检与断网验证
+#
+# ★ 又一张引入新运行期依赖的卡 —— 但只引**一个**包：psutil。
+psutil>=6.0,<8
+#
+# 为什么必须引 psutil，而不像前几张卡那样"纯标准库搞定"：
+#   本卡的核心是 `/system/selfcheck` 的**网络行为主动探测** ——
+#   枚举本进程的 socket 连接、判断有没有非回环出站。标准库做不到
+#   这件事：`socket` 模块只能操作套接字，不能"列出当前进程打开了
+#   哪些连接"。Windows 上尤其如此（没有 /proc/net/tcp 可读）。
+#   `psutil.Process().net_connections(kind="inet")` 是跨平台唯一
+#   现成的答案，且查**本进程**不需要管理员权限。
+#
+#   ⚠️ 关键在于这是**主动探测**而不是"读配置说自己没联网"：
+#   保密检查人员会问"你怎么证明"，而配置声明没有说服力
+#   （施工卡"常见坑"第 2 条）。psutil 让我们能真的去问操作系统。
+#
+# ⚠️ psutil 与"离线运行"红线**不冲突**：psutil 是**纯本地**的
+#   系统信息库，只读内核/OS 暴露的进程与网络元数据，自身不发网络
+#   请求、不带遥测。放它进来恰恰是为了**证明**本进程无外发连接 ——
+#   它是"检查工具"，不是"被检查对象"。check_deps.py 的白名单不拦它。
+#
+# 为什么不用 psutil 的进程创建/杀灭、CPU/内存等其余能力：
+#   本卡只调 `Process()` + `net_connections()` 两个 API，
+#   其余一律不用 —— 依赖面越小，涉密环境的审查面越小。
+#
+# 安装： pip install -e ".[system]"
+# 未安装时：`api/system.py` 惰性导入 psutil，网络自检**降级**为
+#          "报告 unsupported + 说明原因"，而不是让整个自检崩掉 ——
+#          自检的价值在于"报出哪里坏了"，不能自己先炸
+#          （与 `adapters/asr/__init__.health_of_all` 同一取舍）。
+#
+# ★ 分层约束：psutil 属**应用层**依赖，只允许出现在 `api/system.py`。
+#   领域层（domain/）禁止 import 它 —— 已加入 check_layers.py 的黑名单。
+#   验证： python tools/check_layers.py && python tools/check_deps.py
+#

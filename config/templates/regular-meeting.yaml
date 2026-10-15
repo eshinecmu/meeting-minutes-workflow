@@ -1,0 +1,48 @@
+meta:
+  template_id: tpl-regular-meeting-v1
+  name: 工作例会议纪要
+  meeting_kind: regular_meeting
+  version: 1
+
+required_elements:
+  - key: title
+    label: 标题
+    pattern: "^.{4,30}$"
+  - key: meeting_time
+    label: 会议时间
+  - key: location
+    label: 会议地点
+  - key: host
+    label: 主持人
+  - key: attendees
+    label: 参会人员
+    min_count: 1
+  - key: topics
+    label: 议题
+    min_count: 1
+
+section_order:
+  - 会议基本情况
+  - 工作汇报与讨论
+  - 议定事项
+  - 下阶段工作安排
+
+style:
+  readings_allowed:
+    - 会议认为
+    - 会议指出
+    - 会议强调
+    - 会议要求
+    - 会议决定
+    - 会议同意
+    - 会议听取
+    - 会议部署
+  readings_forbidden:
+    - 大家觉得
+    - 差不多
+    - 可能吧
+    - 应该是
+    - 反正
+    - 搞定
+    - 弄一下
+    - 有点问题

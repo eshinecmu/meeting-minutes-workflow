@@ -1,0 +1,9 @@
+thresholds:
+  asr:
+    low_confidence: 0.70
+    warn_avg_confidence: 0.85
+    warn_low_conf_ratio: 0.15
+  gate:
+    approval_timeout_hours: 72    # 超时自动拒绝（F4.6，安全默认）
+  validation:
+    min_owner_missing_ratio: 0.0  # 责任人缺失必须 100% 填"暂无"

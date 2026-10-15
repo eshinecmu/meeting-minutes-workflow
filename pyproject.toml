@@ -1,0 +1,121 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mmwf"
+version = "1.0.0"
+description = "离线会议纪要自动化工作台"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "pydantic>=2.9,<3",
+    "pyyaml>=6.0,<7",
+    "cryptography>=43,<44",   # T1-03：AES-256-GCM 文件加密
+]
+
+[project.optional-dependencies]
+# 开发与测试依赖
+dev = [
+    "pytest>=8.3,<9",
+    "pytest-cov>=6.0,<7",
+    "pytest-asyncio>=0.24,<1",
+    "mypy>=1.13,<2",
+]
+# 服务层（T1-11 起需要）
+api = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.32,<1",
+]
+# 基础设施（T1-02/T1-03/T1-04 起需要）
+infra = [
+    "sqlalchemy>=2.0,<3",
+    "cryptography>=43,<44",
+]
+# 密钥安全存储（可选；装上即自动启用，见 infra/keystore.py）
+# 不装则降级为明文密钥文件，并生成 KEY_STORAGE_UNHARDENED.txt 警示
+keystore = [
+    "keyring>=25,<26",
+]
+# 文档导出（T1-09 起需要）
+docx = [
+    "python-docx>=1.1,<2",
+    "lxml>=5.2,<6",
+]
+# 音频处理（T1-06 起需要）
+#
+# **核心链路不需要这里任何一个包**：ffmpeg/ffprobe 是部署方交付的外部程序，
+# 不是 pip 依赖（部署手册 §2.1 第 7 项）。本 extra 只给开发机与 CI 用：
+#   · pydub       —— 早期探索遗留；实际切分走 subprocess 调 ffmpeg，未使用
+#   · imageio-ffmpeg —— 自带静态 ffmpeg 7.1，让没装 ffmpeg 的开发机能跑真路径。
+#                       **不含 ffprobe**，时长探测会退到解析 ffmpeg 的 stderr。
+#                       ⚠ 清华镜像没有此包，装时须走官方源 -i https://pypi.org/simple
+#   · ⚠ 涉密部署**不要装** imageio-ffmpeg：交付包里已有受控的 ffmpeg。
+audio = [
+    "pydub>=0.25,<1",
+    "imageio-ffmpeg>=0.5,<1",
+]
+# 转写引擎（T1-05）。**刻意不并入默认依赖**：
+# funasr + torch 合计几个 GB，且模型要预先离线下载，
+# 装在只跑单元测试/验收夹具的机器上纯属浪费。
+# 装：pip install -e ".[asr]"
+asr = [
+    "funasr>=1.1,<2",
+    "torch>=2.2,<3",
+    "torchaudio>=2.2,<3",
+]
+# 编排（T1-10 起需要）
+graph = [
+    "langgraph>=0.2,<0.3",
+    "langgraph-checkpoint-sqlite>=2.0,<3",
+]
+# 合规自检（T1-13 起需要）
+#
+# psutil 只服务**一件事**：`/system/selfcheck` 的网络行为主动探测
+# （枚举本进程 socket 连接、判有无非回环出站）。
+#
+# ⚠️ 它与本项目"离线运行"的红线**不冲突**，但值得把话说清楚：
+# psutil 是**纯本地**的系统信息库 —— 它只读内核/OS 暴露的进程与网络
+# 元数据，自身不发任何网络请求、不带遥测。放它进来的目的恰恰是
+# **证明**本进程没有外发连接，所以它是"检查工具"而不是"被检查对象"。
+#
+# 为什么不用标准库自己实现：`socket` 只能列本进程 fd 对应的连接
+# （Windows 上尤其受限），拿不到"这个进程到底有没有到 1.2.3.4:443 的
+# 连接"。`psutil.Process().net_connections()` 是跨平台唯一现成的答案。
+#
+# ⚠️ Windows 上 `net_connections()` 查**全系统**时可能需要管理员权限；
+# 查**本进程**（`psutil.Process()`）不需要。本卡只用后者 + 全系统兜底，
+# 无权限时降级并在报告里标注 —— 见 `api/system.py`。
+system = [
+    "psutil>=6.0,<8",
+]
+
+[project.scripts]
+mmwf = "mmwf.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q --strict-markers"
+markers = [
+    "real_model: 需要真实模型的慢测试（不进提交门禁）",
+    "slow: 慢测试",
+]
+filterwarnings = [
+    "error::DeprecationWarning:mmwf.*",
+    # ResourceWarning 是"对象被 GC 时才发现未关闭"的告警，pytest 会把归属
+    # 记到**执行 GC 的那个测试**上，而非真正泄漏的测试。全量跑时它会随机
+    # 飘到不相干的用例里（实测：test_filestore 背了 test_migrations 的锅）。
+    # 单个文件隔离跑均为 0 告警，说明没有真实泄漏，只是归属跨文件漂移。
+    # 这里降级为"不显示"，避免误导排查方向；如需专项排查，用：
+    #   pytest -W error::ResourceWarning tests/unit/<单个文件>.py
+    "ignore::ResourceWarning",
+]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/mmwf/domain"]
+strict = true
+ignore_missing_imports = true
