@@ -1,5 +1,5 @@
 """T2-04 溯源算法和硬诊断边界；不构图。"""
-import socket
+from _netguard import install_network_guard
 from time import monotonic
 
 import pytest
@@ -57,9 +57,7 @@ def test_no_cross_segment_fuzzy():
 
 
 def test_deterministic_tie_and_time_null(monkeypatch):
-    def no_network(*args, **kwargs):
-        raise AssertionError("禁止出站")
-    monkeypatch.setattr(socket, "socket", no_network)
+    install_network_guard(monkeypatch.setattr)
     source = [seg("甲乙丙丁己", 9, None, None), seg("甲乙丙丁己", 2)]
     result = bind_grounding("甲乙丙丁戊", source)
     assert result == bind_grounding("甲乙丙丁戊", source)

@@ -43,7 +43,7 @@ def test_exception_continues_remaining_standards(acceptance, monkeypatch, capsys
     ('def test_rule():\n    import pytest; pytest.skip("跳过不算通过")\n', False),
     ('# 零执行\n', False),
     ('def test_rule(:\n', False),
-    ('def test_rule():\n    import socket\n    socket.create_connection(("127.0.0.1", 9))\n', False),
+    ('def test_rule():\n    import socket\n    socket.create_connection(("203.0.113.1", 9))\n', False),
 ])
 def test_evidence_requires_executed_passes(acceptance, tmp_path, monkeypatch, source, expected):
     path = tmp_path / 'test_evidence.py'

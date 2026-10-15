@@ -1,5 +1,5 @@
 """D4：Runtime 双引擎、真实图硬路由及持久失败。"""
-import socket
+from _netguard import install_network_guard
 from pathlib import Path
 
 import pytest
@@ -18,9 +18,7 @@ RECORD = "[00:00:12] 张三：今天研究方案，差不多可以。\n[00:00:30
 
 @pytest.fixture
 def runtime(tmp_path, monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("禁止网络")
-    monkeypatch.setattr(socket, "socket", forbidden)
+    install_network_guard(monkeypatch.setattr)
     cfg = load_settings(Path(__file__).resolve().parents[2] / "config")
     cfg = cfg.model_copy(update={"app": cfg.app.model_copy(update={"data_dir": tmp_path})})
     migrate(tmp_path / "mmwf.db")

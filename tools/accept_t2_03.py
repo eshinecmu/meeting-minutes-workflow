@@ -74,16 +74,11 @@ def _assert(cond: bool, label: str) -> bool:
     return bool(cond)
 
 
-# 通过 -p accept_t2_03 加载到证据子进程；ASGI 不建立网络连接。
+# 通过 -p accept_t2_03 加载到证据子进程；仅允许事件循环所需的回环连接。
 def pytest_configure(config):
-    import socket
+    from _netguard import install_network_guard
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("T2-03 验收禁止网络连接")
-
-    socket.socket.connect = forbidden
-    socket.socket.connect_ex = forbidden
-    socket.create_connection = forbidden
+    install_network_guard()
 
 
 def _run_evidence(number: int, tmp: Path) -> bool:
@@ -96,7 +91,7 @@ def _run_evidence(number: int, tmp: Path) -> bool:
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     env.pop("PYTEST_ADDOPTS", None)
     # 输出路径用占位符表示，正文完整保留；实际命令仍使用本次临时目录。
-    shown = [".venv/bin/python", *command[1:]]
+    shown = command
     print("命令：" + shlex.join(shown).replace(str(tmp), "<临时目录>"), flush=True)
     result = subprocess.run(command, cwd=PROJECT_ROOT, env=env, text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

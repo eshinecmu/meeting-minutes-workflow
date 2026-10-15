@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 import accept_f5_9 as acceptance
 
@@ -13,7 +14,7 @@ COUNTS = r'计数：executed=(\d+) passed=(\d+) failed=(\d+) error=(\d+) skipped
 def run_accept(*args):
     env = dict(os.environ)
     env.pop('PYTEST_ADDOPTS', None)
-    return subprocess.run([str(ROOT / '.venv/bin/python'), 'tools/accept_f5_9.py', *args],
+    return subprocess.run([sys.executable, 'tools/accept_f5_9.py', *args],
                           cwd=ROOT, env=env, capture_output=True, text=True)
 
 

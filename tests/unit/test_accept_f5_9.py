@@ -13,7 +13,7 @@ import accept_f5_9 as acceptance
     ('def test_rule():\n    import pytest; pytest.skip("必需项不能跳过")\n', False),
     ('# 零收集\n', False),
     ('def test_rule(:\n', False),
-    ('def test_rule():\n    import socket; socket.create_connection(("127.0.0.1", 9))\n', False),
+    ('def test_rule():\n    import socket; socket.create_connection(("203.0.113.1", 9))\n', False),
 ])
 def test_real_counts(tmp_path, monkeypatch, capsys, source, ok):
     path = tmp_path / 'test_evidence.py'

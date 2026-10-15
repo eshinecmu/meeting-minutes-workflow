@@ -42,15 +42,9 @@ def _assert(cond, label):
 
 def pytest_configure(config):
     """所有证据子进程禁止 socket 出站；不启动真实模型。"""
-    import socket
+    from _netguard import install_network_guard
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("T2-05 验收禁止网络连接")
-
-    for name in ("connect", "connect_ex", "sendto", "sendmsg"):
-        if hasattr(socket.socket, name):
-            setattr(socket.socket, name, forbidden)
-    socket.create_connection = forbidden
+    install_network_guard()
 
 
 def _run_evidence(number: int, tmp: Path) -> bool:

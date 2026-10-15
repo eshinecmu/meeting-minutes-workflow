@@ -9,7 +9,7 @@ from threading import Event
 from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 from zipfile import ZipFile
-import socket
+from _netguard import install_network_guard
 import subprocess
 
 import pytest
@@ -80,8 +80,7 @@ def flow(tmp_path, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("acceptance tests must not invoke network or subprocesses")
 
-    monkeypatch.setattr(socket.socket, "connect", forbidden)
-    monkeypatch.setattr(socket, "create_connection", forbidden)
+    install_network_guard(monkeypatch.setattr)
     monkeypatch.setattr(subprocess, "run", forbidden)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     cfg = load_settings(Path(__file__).resolve().parents[2] / "config")

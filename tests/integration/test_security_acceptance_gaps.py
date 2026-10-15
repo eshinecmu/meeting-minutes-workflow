@@ -17,6 +17,8 @@ from threading import Event
 import time
 from types import ModuleType, SimpleNamespace
 
+from _netguard import install_network_guard
+
 import httpx
 import psutil
 import pytest
@@ -54,9 +56,7 @@ def credential_backend(monkeypatch):
 
 @pytest.fixture
 def flow(tmp_path, monkeypatch):
-    def no_network(*args, **kwargs):
-        raise AssertionError('business flow must not access a socket')
-    monkeypatch.setattr(socket.socket, 'connect', no_network)
+    install_network_guard(monkeypatch.setattr)
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path))
     cfg = load_settings(ROOT / 'config')
     cfg = cfg.model_copy(update={'app': cfg.app.model_copy(update={

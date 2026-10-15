@@ -4,8 +4,10 @@ import csv
 import json
 from pathlib import Path
 import shutil
-import socket
+from _netguard import install_network_guard
+from portable_support import directory_symlink
 import subprocess
+import sys
 
 import pytest
 import shadow_run
@@ -13,16 +15,12 @@ import shadow_report
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests/fixtures/shadow/synthetic"
-PYTHON = ROOT / ".venv/bin/python"
+PYTHON = sys.executable
 
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("SYNTHETIC 工具测试禁止网络")
-    monkeypatch.setattr(socket.socket, "connect", forbidden)
-    monkeypatch.setattr(socket.socket, "connect_ex", forbidden)
-    monkeypatch.setattr(socket, "create_connection", forbidden)
+    install_network_guard(monkeypatch.setattr)
 
 
 def setup_batch(tmp_path):
@@ -51,7 +49,7 @@ def test_subprocess_cli_synthetic_roundtrip_and_projection(tmp_path):
     shutil.copytree(FIXTURES, source)
     batch, output = tmp_path / "batch", tmp_path / "report"
     # 子进程也显式封锁 socket，不能靠父进程 monkeypatch 作为禁网证据。
-    wrapper = "import runpy,socket,sys; deny=lambda *a,**k: (_ for _ in ()).throw(AssertionError('SYNTHETIC 禁网')); socket.socket.connect=deny; socket.socket.connect_ex=deny; socket.create_connection=deny; p=sys.argv.pop(1); runpy.run_path(p,run_name='__main__')"
+    wrapper = "import runpy,sys; sys.path.insert(0, 'tools'); from _netguard import install_network_guard; install_network_guard(); p=sys.argv.pop(1); runpy.run_path(p,run_name='__main__')"
     before = snapshot(source)
     run = subprocess.run([str(PYTHON), "-c", wrapper, str(ROOT / "tools/shadow_run.py"),
                           "--manifest", str(source / "manifest.json"), "--output", str(batch)], cwd=ROOT, capture_output=True, text=True)
@@ -138,7 +136,7 @@ def test_output_conflicts_do_not_modify_inputs(tmp_path, conflict):
     if conflict == "batch": output = batch / "report"
     if conflict == "parent": output = tmp_path
     if conflict == "symlink":
-        (tmp_path / "link").symlink_to(source, target_is_directory=True)
+        directory_symlink(tmp_path / "link", source)
         output = tmp_path / "link/report"
     if conflict == "traversal": output = tmp_path / "x/../report"
     if conflict == "production":

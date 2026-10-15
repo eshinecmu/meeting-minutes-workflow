@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 import accept_t2_05 as acceptance
 
@@ -12,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_full_subprocess_stdout_tooling_only(tmp_path):
     env = dict(os.environ)
     env.pop('PYTEST_ADDOPTS', None)
-    result = subprocess.run([str(ROOT / '.venv/bin/python'), 'tools/accept_t2_05.py'],
+    result = subprocess.run([sys.executable, 'tools/accept_t2_05.py'],
                             cwd=ROOT, env=env, capture_output=True, text=True)
     # 失败时也完整保留证据，便于外部检查循环复核。
     (tmp_path / 'accept_t2_05.stdout.txt').write_text(result.stdout + result.stderr, encoding='utf-8')

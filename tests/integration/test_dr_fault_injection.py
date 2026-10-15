@@ -1,7 +1,7 @@
 """G2 批次 1：真实节点/存储/自检，模型与操作系统故障均确定性注入。"""
 from io import BytesIO
 from pathlib import Path
-import socket
+from _netguard import install_network_guard
 from types import SimpleNamespace
 from zipfile import ZipFile
 
@@ -31,9 +31,7 @@ FONTS = {"方正小标宋简体", "黑体", "楷体_GB2312", "仿宋_GB2312", "�
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("DR 测试禁止网络")
-    monkeypatch.setattr(socket, "socket", forbidden)
+    install_network_guard(monkeypatch.setattr)
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     cfg = load_settings(Path(__file__).resolve().parents[2] / "config")
     cfg = cfg.model_copy(update={"app": cfg.app.model_copy(update={"data_dir": tmp_path})})

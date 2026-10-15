@@ -1,7 +1,7 @@
 """验收脚本反例锁：规则失效必须报 FAIL 并非零退出。"""
 import importlib.util
 from pathlib import Path
-import socket
+from _netguard import install_network_guard
 
 import pytest
 
@@ -30,11 +30,7 @@ def test_complete_acceptance_is_offline_and_does_not_mutate_repo(acceptance, mon
     templates = acceptance.PROJECT_ROOT / "config" / "templates"
     before = {p.name: p.read_bytes() for p in templates.glob("*.yaml")}
 
-    def no_network(*args, **kwargs):
-        raise AssertionError("验收不得建立网络连接")
-
-    monkeypatch.setattr(socket.socket, "connect", no_network)
-    monkeypatch.setattr(socket, "create_connection", no_network)
+    install_network_guard(monkeypatch.setattr)
     monkeypatch.setattr("sys.argv", ["accept_t2_02.py"])
     assert acceptance.main() == 0
     assert "共 8 项，通过 8 项" in capsys.readouterr().out

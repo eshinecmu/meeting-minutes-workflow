@@ -3,7 +3,8 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import shutil
-import socket
+from _netguard import install_network_guard
+from portable_support import directory_symlink
 from unittest.mock import Mock
 
 import pytest
@@ -24,10 +25,7 @@ FIXTURES = ROOT / "tests/fixtures/shadow/synthetic"
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    def forbidden(*args, **kwargs):
-        raise AssertionError("合成工具测试禁止 socket 出站")
-    monkeypatch.setattr(socket, "socket", forbidden)
-    monkeypatch.setattr(socket, "create_connection", forbidden)
+    install_network_guard(monkeypatch.setattr)
 
 
 def snapshot(root):
@@ -186,7 +184,7 @@ def test_paths_and_reuse_fail_before_output(tmp_path, problem):
     elif problem == "input_overlap":
         output = source / "output"
     elif problem == "symlink_overlap":
-        (tmp_path / "link").symlink_to(source, target_is_directory=True)
+        directory_symlink(tmp_path / "link", source)
         output = tmp_path / "link/output"
     else:
         formal = tmp_path / "production"

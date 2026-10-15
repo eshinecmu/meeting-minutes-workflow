@@ -1,6 +1,6 @@
 """抽取开关的生产装配与节点集成；全程禁止真实网络连接。"""
 
-import socket
+from _netguard import install_network_guard
 import urllib.request
 from pathlib import Path
 
@@ -19,11 +19,11 @@ RECORD = "[00:00:12] 张三：同意按计划实施。"
 
 @pytest.fixture(autouse=True)
 def forbid_network(monkeypatch):
-    """构造与节点执行都不允许打开套接字或发出 HTTP 请求。"""
+    """构造与节点执行禁止外部连接或发出 HTTP 请求。"""
     def forbidden(*args, **kwargs):
         raise AssertionError("测试禁止网络调用")
 
-    monkeypatch.setattr(socket, "socket", forbidden)
+    install_network_guard(monkeypatch.setattr)
     monkeypatch.setattr(urllib.request, "urlopen", forbidden)
 
 

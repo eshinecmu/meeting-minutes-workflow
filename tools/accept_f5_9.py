@@ -56,15 +56,9 @@ REAL_SKIP = 'F5.9 真转换待验：未安装/未配置 soffice，须目标机 L
 
 def pytest_configure(config):
     """验收仅用合成资料，禁止 socket 出站。"""
-    import socket
+    from _netguard import install_network_guard
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError('F5.9 验收禁止网络连接')
-
-    for name in ('connect', 'connect_ex', 'sendto', 'sendmsg'):
-        if hasattr(socket.socket, name):
-            setattr(socket.socket, name, forbidden)
-    socket.create_connection = forbidden
+    install_network_guard()
 
 
 def _counts(report: Path):

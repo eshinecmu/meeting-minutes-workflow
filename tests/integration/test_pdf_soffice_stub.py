@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.mark.parametrize('failure', ['', 'version', 'conversion'])
 def test_gated_body_with_configured_executable(tmp_path, failure):
-    executable = tmp_path / 'soffice-stub'
-    executable.write_text(f'#!{sys.executable}\n' + '''
+    executable = tmp_path / 'soffice_stub.py'
+    executable.write_text('''
 import pathlib
 import sys
 if '--version' in sys.argv:
@@ -41,10 +41,21 @@ for offset in offsets:
 pdf += f'trailer\\n<< /Size 5 /Root 1 0 R >>\\nstartxref\\n{xref}\\n%%EOF\\n'.encode()
 (pathlib.Path(sys.argv[5]) / source.with_suffix('.pdf').name).write_bytes(pdf)
 '''.replace("import pathlib", f"FAILURE = {failure!r}\nimport pathlib"), encoding='utf-8')
-    executable.chmod(0o700)
     # 仅替换固定门控模块的配置加载结果；body、HTTP、G3 与 FileStore 原样运行。
     plugin = tmp_path / 'f59_stub_config.py'
     plugin.write_text(f'''
+def pytest_configure(config):
+    import subprocess
+    import sys
+    original = subprocess.run
+    def run(command, *args, **kwargs):
+        # 仅替换假程序启动方式；用解释器执行脚本，不依赖 shebang/chmod。
+        if command and str(command[0]) == {str(executable)!r}:
+            command = [sys.executable, *command]
+        return original(command, *args, **kwargs)
+    subprocess.run = run
+
+
 def pytest_collection_modifyitems(items):
     for item in items:
         module = item.module

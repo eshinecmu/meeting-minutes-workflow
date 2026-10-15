@@ -1,4 +1,4 @@
-"""G3 batch 2: deterministic faults; real SIGKILL, SQLite and persisted files.
+"""G3 batch 2: deterministic faults; 强制终止子进程, SQLite and persisted files.
 
 裁决：§03 STAB-05 只要求重试及有界超时；按 §01 §9.3 使用 E9001，
 不擅定新的锁超时码。恢复只要求从最后已提交节点续跑，不要求恢复半次 ASR。
@@ -12,8 +12,8 @@ import errno
 import json
 import os
 import shutil
-from pathlib import Path
 import signal
+from pathlib import Path
 import subprocess
 import sys
 from threading import Event
@@ -126,7 +126,8 @@ def killed_worker(root, stop):
                 raise AssertionError('child did not reach fault barrier')
         assert line.strip() == f'READY:{stop}', line
         proc.kill()
-        assert proc.wait(timeout=10) == -signal.SIGKILL
+        # Windows TerminateProcess 返回正数；POSIX 返回负信号值。
+        assert proc.wait(timeout=10) == (1 if sys.platform == "win32" else -signal.SIGKILL)
         yield
     finally:
         if proc.poll() is None:

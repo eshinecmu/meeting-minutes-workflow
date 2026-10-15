@@ -1,8 +1,9 @@
 """pytest 全局配置。
 
-做两件事：
+做三件事：
   ① 把 `tools/` 加进 `sys.path`；
   ② 把 `tests/fixtures/graph/` 加进 `sys.path`（T1-10 的编排替身）。
+  ③ 把 `tests/` 加进 `sys.path`（W2 跨平台测试辅助函数）。
 
 为什么要这样做
 -------------
@@ -34,7 +35,7 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 
-for _extra in (_HERE.parent / "tools", _HERE / "fixtures" / "graph"):
+for _extra in (_HERE, _HERE.parent / "tools", _HERE / "fixtures" / "graph"):
     if str(_extra) not in sys.path:
         sys.path.insert(0, str(_extra))
 

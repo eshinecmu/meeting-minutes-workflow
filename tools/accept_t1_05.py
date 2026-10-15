@@ -276,8 +276,9 @@ def check_standard_4(tmp: Path) -> bool:
     finally:
         sys.modules.pop("funasr", None)
 
-    # --- 4b：拦截 socket，让"任何联网尝试"都变成硬失败 ---
+    # --- 4b：拦截 socket，让"非回环联网尝试"都变成硬失败 ---
     import socket as _socket
+    from _netguard import require_loopback
 
     class _Blocked(RuntimeError):
         pass
@@ -287,12 +288,20 @@ def check_standard_4(tmp: Path) -> bool:
     attempts: list[str] = []
 
     def _no_connect(self, addr, *a, **kw):  # noqa: ANN001
-        attempts.append(str(addr))
-        raise _Blocked(f"网络被验收脚本阻断：{addr}")
+        try:
+            require_loopback(addr)
+        except AssertionError as exc:
+            attempts.append(str(addr))
+            raise _Blocked(f"网络被验收脚本阻断：{addr}") from exc
+        return real_connect(self, addr, *a, **kw)
 
     def _no_create(addr, *a, **kw):  # noqa: ANN001
-        attempts.append(str(addr))
-        raise _Blocked(f"网络被验收脚本阻断：{addr}")
+        try:
+            require_loopback(addr)
+        except AssertionError as exc:
+            attempts.append(str(addr))
+            raise _Blocked(f"网络被验收脚本阻断：{addr}") from exc
+        return real_create(addr, *a, **kw)
 
     _socket.socket.connect = _no_connect            # type: ignore[assignment]
     _socket.create_connection = _no_create          # type: ignore[assignment]
@@ -309,7 +318,7 @@ def check_standard_4(tmp: Path) -> bool:
             audio = ensure_sample_audio()
             result = echo.transcribe(audio, hotwords=["张建国"])
             ok &= _assert(len(result.segments) > 0, "断网状态下转写出段落")
-            ok &= _assert(not attempts, f"全程零联网尝试（实际 {len(attempts)} 次）")
+            ok &= _assert(not attempts, f"全程零外部联网尝试（实际 {len(attempts)} 次）")
         finally:
             unregister(PROVIDER_NAME)
     finally:

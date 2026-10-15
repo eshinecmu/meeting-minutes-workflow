@@ -2,7 +2,7 @@
 
 import io
 import json
-import socket
+from _netguard import install_network_guard
 import urllib.error
 import urllib.request
 from types import SimpleNamespace
@@ -19,10 +19,10 @@ from mmwf.settings import LlmConfig
 
 @pytest.fixture(autouse=True)
 def forbid_network(monkeypatch):
-    """即使忘记注入传输替身，也立即失败，绝不开真实套接字。"""
+    """即使忘记注入传输替身，也立即失败，非回环连接立即失败。"""
     def forbidden(*args, **kwargs):
         raise AssertionError("测试禁止网络调用")
-    monkeypatch.setattr(socket, "socket", forbidden)
+    install_network_guard(monkeypatch.setattr)
     monkeypatch.setattr(urllib.request, "urlopen", forbidden)
 
 
