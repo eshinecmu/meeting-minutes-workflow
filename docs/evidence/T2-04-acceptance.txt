@@ -1,0 +1,134 @@
+临时数据 / DB / 令牌：每项隔离，结束清理；真实图 + 进程内 HTTP，无模型 / 无网络
+证据复用现有定向 pytest；命令与输出中的临时路径统一显示为 <临时目录>。
+Claude 规则 9：遵循 D01～D10；D6 仅补验收与文档，无生产状态 / 端点 / schema 变更。
+
+======================================================================
+  标准 1：无依据硬阻断与出口防线（自动证据）
+======================================================================
+  PASS hard route 优先于 retry=0
+  PASS hard route 优先于 retry=2
+  PASS hard route 优先于 retry=3
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/integration/test_post_validation_pipeline.py::test_blocked_priority_and_persisted_failed tests/integration/test_accept_t2_04_evidence.py::test_http_hard_route_and_failed_download tests/integration/test_minutes_finalization.py::test_direct_runner_blocks_and_persists_failed tests/integration/test_minutes_finalization.py::test_graph_cache_and_http_download_do_not_hide_bad_candidate tests/integration/test_minutes_finalization.py::test_registered_decision_replay_rechecks_before_final tests/unit/test_grounding.py::test_partial_bad_ref_cannot_hide tests/contract/test_post_validation_contract.py::test_missing_source_precheck_preserves_g3
+................                                                         [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: <临时目录>/report.xml -
+16 passed, 1 warning in 1.56s
+  PASS 定向证据 16 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  标准 2：责任人及粒度规则（自动证据）
+======================================================================
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/unit/test_minutes_granularity.py
+......................................                                   [100%]
+- generated xml file: <临时目录>/report.xml -
+38 passed in 0.12s
+  PASS 定向证据 38 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  标准 3：双引擎生产模板（自动证据）
+======================================================================
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/integration/test_post_validation_pipeline.py::test_both_engines_use_template_snapshot_and_checks tests/integration/test_post_validation_pipeline.py::test_a6_chunk_metadata_missing_aggregates_without_schema_retry
+.........                                                                [100%]
+=============================== warnings summary ===============================
+tests/integration/test_post_validation_pipeline.py::test_both_engines_use_template_snapshot_and_checks[naive-tpl-regular-meeting-v1]
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: <临时目录>/report.xml -
+9 passed, 1 warning in 0.87s
+  PASS 定向证据 9 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  标准 4：数字与人名一致性（自动证据）
+======================================================================
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/unit/test_minutes_consistency.py tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repair
+...............................                                          [100%]
+=============================== warnings summary ===============================
+tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repair
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: <临时目录>/report.xml -
+31 passed, 1 warning in 0.88s
+  PASS 定向证据 31 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  标准 5：统一问题清单与文本下载（自动证据）
+======================================================================
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repair tests/contract/test_post_validation_contract.py tests/unit/test_minutes_issues.py tests/contract/test_gate_desktop_contract.py
+...........................                                              [100%]
+=============================== warnings summary ===============================
+tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repair
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: <临时目录>/report.xml -
+27 passed, 1 warning in 1.85s
+  PASS 定向证据 27 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  标准 6：模糊与多段溯源（自动证据）
+======================================================================
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/unit/test_grounding.py tests/unit/test_extraction_grounding.py
+...................................                                      [100%]
+- generated xml file: <临时目录>/report.xml -
+35 passed in 0.70s
+  PASS 定向证据 35 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  标准 7：旧会议恢复与实际交付（自动证据）
+======================================================================
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/integration/test_minutes_checkpoint_compat.py tests/integration/test_minutes_finalization.py tests/unit/test_minutes_state_compat.py tests/unit/test_minutes_store.py
+.....................................                                    [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: <临时目录>/report.xml -
+37 passed, 1 warning in 2.82s
+  PASS 定向证据 37 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  标准 8：验收证据边界（自动证据）
+======================================================================
+命令：.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_04 --basetemp <临时目录>/data --junitxml <临时目录>/report.xml tests/unit/test_accept_t2_04.py
+........                                                                 [100%]
+- generated xml file: <临时目录>/report.xml -
+8 passed in 1.81s
+  PASS 定向证据 8 项，失败 0，错误 0，跳过 0
+
+======================================================================
+  Electron / 视觉人工项（未执行，不计通过数）
+======================================================================
+  待验 Electron G3 结构化编辑、问题级别 / fuzzy 提示、来源展示及真实 UTF-8 文本下载
+  待验 Electron 纪要 / 记录稿选择、DOCX 正文与版式、目标机 soffice 转换
+  待验 V3：IT-24 与要素齐备率的目标机证据
+  待验 V4：随机 10 条引用可点击且内容吻合的操作记录 / 截图；真实音频时间元数据
+  待验 R-4：自动阻断证据已覆盖；完整红线验收仍待目标机 / 人工证据
+  待验 R-5：T2-05 影子无依据率=0、语义支持与规则误报 / 待办误降级评估
+
+======================================================================
+  T2-04 验收结果（仅自动证据）
+======================================================================
+  PASS 标准 1  无依据硬阻断与出口防线
+  PASS 标准 2  责任人及粒度规则
+  PASS 标准 3  双引擎生产模板
+  PASS 标准 4  数字与人名一致性
+  PASS 标准 5  统一问题清单与文本下载
+  PASS 标准 6  模糊与多段溯源
+  PASS 标准 7  旧会议恢复与实际交付
+  PASS 标准 8  验收证据边界
+
+  共 8 项，通过 8 项
+PASS T2-04 自动验收通过（8/8）
+人工项不计通过；V3/V4/R-4/R-5 未全闭环，下一张 T2-05。
