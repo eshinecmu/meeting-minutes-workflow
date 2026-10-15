@@ -61,6 +61,40 @@ class GateService:
         self.store.observe(meeting_id, status, created_at)
         return status
 
+    def topics(self, meeting_id):
+        from mmwf.domain.review.gate_projection import display_topics
+        from mmwf.infra.filestore import make_filestore
+
+        with self.runtime.meeting_lock(meeting_id), self.runtime.runner(meeting_id) as runner:
+            state = runner.values()
+            pending = runner.status().pending_gate
+            store = make_filestore(meeting_id, self.runtime.cfg.resolve_path(self.runtime.cfg.app.data_dir))
+            raw = store.read_json("transcript/segments.json") if store.exists("transcript/segments.json") else {}
+            # 文件分段的 seq 与图 refs 的 seg-N 使用同一编号；不按时间近似配对。
+            segments = [dict(s, segment_id=s.get("segment_id") or f"seg-{index}")
+                        for index, s in enumerate(sorted(raw.get("segments", []), key=lambda s: s.get("start_ms", 0)), 1)]
+            return display_topics(state, segments, pending.risk if pending else "medium",
+                                  self.runtime.cfg.thresholds.asr.low_confidence)
+
+    def diff(self, meeting_id, gate, body):
+        from mmwf.domain.review.gate_projection import system_text
+        from mmwf.domain.minutes.validator import diff_versions, summarize_blocks
+
+        gate = gate.upper()
+        if not isinstance(body, dict) or set(body) != {"checkpoint_id", "payload"}:
+            raise MmwfError(code="E4001", detail="差异请求必须包含 checkpoint_id 和 payload")
+        checkpoint = body["checkpoint_id"]
+        if gate not in {"G2", "G3"} or not isinstance(checkpoint, str) or not checkpoint.strip():
+            raise MmwfError(code="E4001", detail="闸口或检查点错误")
+        with self.runtime.meeting_lock(meeting_id), self.runtime.runner(meeting_id) as runner:
+            pending = runner.status().pending_gate
+            if not pending or pending.gate != gate or pending.checkpoint_id != checkpoint:
+                raise MmwfError(code="E4001", detail="闸口或检查点已过期、不匹配或已决定")
+            before = runner.values()
+            after = validate_payload(gate, before, body["payload"])
+            segments = diff_versions(system_text(gate, before), system_text(gate, after))
+            return {"segments": segments, "summary": summarize_blocks(segments)}
+
     def apply_decision(self, meeting_id, gate, checkpoint_id, decision, payload,
                        operator, comment, *, auto=False, reason="human", decided_at=None):
         gate = gate.upper()

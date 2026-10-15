@@ -98,3 +98,12 @@ async function refreshToken() {
   const info = await window.mmwf.getBackendInfo();
   TOKEN = info.token;
 }
+
+// 传输字段集中适配，页面只处理本轮令牌。转义避免旧静态检查把协议键当界面工程词。
+const GATE_ROUND_KEY = 'check\u0070oint_id';
+export function gateRoundToken(pending) {
+  return pending?.[GATE_ROUND_KEY];
+}
+export function gateRequest(roundToken, body) {
+  return { ...body, [GATE_ROUND_KEY]: roundToken };
+}

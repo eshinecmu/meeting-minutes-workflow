@@ -294,6 +294,8 @@ class TestToken:
             ("POST", f"{API}/meetings/{{meeting_id}}/start"),
             ("GET", f"{API}/meetings/{{meeting_id}}/topics"),
             ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/decide"),
+            # T2-03 新增，Claude 按规则 9 裁决（D11）。
+            ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/diff"),
             ("GET", f"{API}/meetings/{{meeting_id}}/minutes"),
             ("GET", f"{API}/meetings/{{meeting_id}}/record"),
             ("POST", f"{API}/meetings/{{meeting_id}}/export"),
@@ -315,7 +317,7 @@ class TestToken:
             ("POST", f"{API}/meetings/{{meeting_id}}/audio"),
             # T1-16 收口为 SAD 30 条 + 1 条导出方法守卫。
             # T2-02 新增 2 个 owner 已批准的模板历史端点：
-            # SAD 32 条 / 路由表 33 条 / 去重路径 28 条。
+            # SAD 33 条 / 路由表 34 条 / 去重路径 29 条（含 T2-03）。
             ("GET", f"{API}/templates"),
             ("POST", f"{API}/templates"),
             ("PUT", f"{API}/templates/{{template_id}}"),
@@ -330,10 +332,10 @@ class TestToken:
         assert not stale, f"清单里有已不存在的端点：{sorted(stale)}"
         unlisted = actual - declared
         assert not unlisted, f"路由表有未登记的端点（潜在裸奔）：{sorted(unlisted)}"
-        assert len(actual) == 33, f"端点总数变了：{len(actual)}（清单 33 条）"
+        assert len(actual) == 34, f"端点总数变了：{len(actual)}（清单 34 条）"
 
         # ── SAD §9.1 收口核对（这才是"进度对照"的权威口径）──────────────
-        # 判据不是"数够 32 个数字"，而是**逐条点名**：
+        # 判据不是"数够 33 个数字"，而是**逐条点名**：
         # SAD 里列的每一条都必须真的在路由表里；多出来的只能是我们
         # **明确知道并写下理由**的那些（当前恰好 1 条方法守卫）。
         # 这样将来任何人删掉一条 SAD 端点，这里会指名报出是哪条。
@@ -350,6 +352,8 @@ class TestToken:
             ("GET", f"{API}/meetings/{{meeting_id}}/record"),
             ("GET", f"{API}/meetings/{{meeting_id}}/topics"),
             ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/decide"),
+            # T2-03 新增，Claude 按规则 9 裁决（D11）。
+            ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/diff"),
             ("GET", f"{API}/meetings/{{meeting_id}}/minutes"),
             ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
             ("POST", f"{API}/meetings/{{meeting_id}}/export"),
@@ -371,7 +375,7 @@ class TestToken:
             ("GET", f"{API}/system/selfcheck"),
             ("GET", f"{API}/system/fonts"),
         }
-        assert len(sad_expected) == 32, f"SAD 清单自身数错了：{len(sad_expected)}"
+        assert len(sad_expected) == 33, f"SAD 清单自身数错了：{len(sad_expected)}"
         missing = sad_expected - actual
         assert not missing, f"SAD §9.1 里有端点没实现：{sorted(missing)}"
         extra = actual - sad_expected

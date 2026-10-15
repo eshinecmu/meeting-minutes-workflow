@@ -236,19 +236,13 @@ def register(router: APIRouter, rt: Runtime) -> None:
         它在等人工确认前只是中间结果，确认后才进正式产物。
         """
         _require_meeting(meeting_id, rt.db_path)
-        with rt.meeting_lock(meeting_id):
-            runner = rt.runner(meeting_id)
-            try:
-                values = runner.values()
-            finally:
-                runner.close()
-        return env.ok(
-            {
-                "topics": values.get("topics") or [],
-                "resolutions": values.get("resolutions") or [],
-                "action_items": values.get("action_items") or [],
-            }
-        )
+        return env.ok(rt.gate_service().topics(meeting_id))
+
+    @router.post("/meetings/{meeting_id}/gate/{gate}/diff")
+    def gate_diff(meeting_id: str, gate: str, payload: Any = Body(...)):
+        """本轮系统正文与人工草稿比较；无落盘、审计或恢复副作用。"""
+        _require_meeting(meeting_id, rt.db_path)
+        return env.ok(rt.gate_service().diff(meeting_id, gate, payload))
 
     @router.post("/meetings/{meeting_id}/gate/{gate}/decide")
     def decide_gate(

@@ -196,3 +196,12 @@ textarea { min-height: 160px; resize: vertical; line-height: var(--lh); }
 }
 .list .item-row:hover { border-color: var(--c-primary); }
 .list .item-row .grow { flex: 1; }
+
+/* 闸口差异：只给变化段着色，未变段默认收起、灰显。 */
+.gate-diff pre { white-space: pre-wrap; font-family: var(--font); }
+.diff-changed { background: #fff3cd; color: #664d03; }
+.diff-added { background: #d1e7dd; color: #0f5132; }
+.diff-removed { background: #f8d7da; color: #842029; }
+.diff-unchanged { color: #6c757d; background: #f1f3f5; }
+.low-confidence { color: #842029; font-weight: bold; }
+.factor textarea { display: block; width: 100%; min-height: 4em; }

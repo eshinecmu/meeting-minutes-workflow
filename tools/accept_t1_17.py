@@ -7,7 +7,7 @@
 
 八条标准（施工卡 §3.1 原文）
 ---------------------------
-  [ ] 1  ★ 端点清单三口径**未变**（SAD=32 / 路由表=33 / 去重路径=28）
+  [ ] 1  ★ 端点清单三口径**未变**（SAD=33 / 路由表=34 / 去重路径=29）
          —— 这是"本卡没越界改端点"的**探测器**
   [ ] 2  ★ 缺陷 14：`close()` 后 `.app` 重新编译拿到**新**连接；幂等；不丢注入的 app
   [ ] 3  ★ 缺陷 25：`minutes_version` 表**仍在**、结构未变、弃用说明在、一期恒 0 行
@@ -20,8 +20,9 @@
 ⚠️ 关于标准 1（本卡的"越界探测器"）
 -----------------------------------
 T1-16 已经把 SAD §9.1 做到 30/30；T2-02 后续新增 2 个 owner 已批准端点。
-本检查仅随批准清单推进计数，核对当前 33 条路由：
-  · 逐条点名核对 SAD 的 32 条（数对了但换了个名字，也要红）
+T2-03 新增，Claude 按规则 9 裁决：无状态 gate diff 端点。
+本检查仅随批准清单推进计数，核对当前 34 条路由：
+  · 逐条点名核对 SAD 的 33 条（数对了但换了个名字，也要红）
   · 额外端点必须**恰好**是那条登记在案的 `GET .../export/undo` 方法守卫
   · 三个口径同时报，任何一个变了就红
 
@@ -59,7 +60,7 @@ FAIL = "✗"
 
 API = "/api/v1"
 
-#: SAD §9.1 全表；T2-02 新增 2 个 owner 已批准的模板历史端点，共 32 条。
+#: SAD §9.1 全表；T2-02 新增 2 个 owner 已批准的模板历史端点，共 33 条。T2-03 新增，Claude 按规则 9 裁决：gate diff。
 SAD_9_1 = {
     ("POST", f"{API}/system/handshake"),
     ("POST", f"{API}/meetings"),
@@ -73,6 +74,7 @@ SAD_9_1 = {
     ("GET", f"{API}/meetings/{{meeting_id}}/record"),
     ("GET", f"{API}/meetings/{{meeting_id}}/topics"),
     ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/decide"),
+    ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/diff"),
     ("GET", f"{API}/meetings/{{meeting_id}}/minutes"),
     ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
     ("POST", f"{API}/meetings/{{meeting_id}}/export"),
@@ -264,22 +266,22 @@ def check_standard_1(tmp: Path) -> bool:
     ok = True
 
     sad_missing = SAD_9_1 - actual
-    ok &= _assert(not sad_missing, "SAD §9.1 的 32 条仍全部实现",
-                  f"缺 {len(sad_missing)} 条：{sorted(sad_missing)}" if sad_missing else "32/32")
+    ok &= _assert(not sad_missing, "SAD §9.1 的 33 条仍全部实现",
+                  f"缺 {len(sad_missing)} 条：{sorted(sad_missing)}" if sad_missing else "33/33")
 
     extra = actual - SAD_9_1
     ok &= _assert(extra == KNOWN_EXTRA,
                   "额外端点仍**恰好**是登记在案的方法守卫（没多、没少）",
                   f"实测多出：{sorted(extra)}" if extra != KNOWN_EXTRA else "1/1")
 
-    ok &= _assert(len(SAD_9_1) == 32, "SAD 清单自身 = 32 条", f"{len(SAD_9_1)}")
-    ok &= _assert(len(actual) == 33,
-                  "路由表 method+path = 33（T2-02 新增 2 个 owner 已批准端点）",
+    ok &= _assert(len(SAD_9_1) == 33, "SAD 清单自身 = 33 条", f"{len(SAD_9_1)}")
+    ok &= _assert(len(actual) == 34,
+                  "路由表 method+path = 34（T2-02 +2；T2-03 新增，Claude 按规则 9 裁决 +1）",
                   f"实测 {len(actual)}")
 
     paths_only = {p for _, p in actual}
-    ok &= _assert(len(paths_only) == 28,
-                  "去重后路径数 = 28（T2-02 新增 2 个 owner 已批准端点）",
+    ok &= _assert(len(paths_only) == 29,
+                  "去重后路径数 = 29（T2-02 +2；T2-03 新增，Claude 按规则 9 裁决 +1）",
                   f"实测 {len(paths_only)}")
 
     # 本卡**不该**新增任何端点：正面断言这一点

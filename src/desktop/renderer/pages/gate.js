@@ -1,227 +1,274 @@
-/**
- * 页面 · 内容确认（第 ② 步）
- * ============================================================================
- * G2（待确认议题）与 G3（待审定纪要）共用此页。
- *
- * ⚠️⚠️ 本页承载两条强制要求：
- *
- *   F4.2 —— **G2 每条待确认项必须展示四要素，并排可见**：
- *           原始内容 / 系统抽取结果 / 风险评级 / 抽取依据。
- *           这是使用者判断"该不该点确认"的**唯一依据**，
- *           所以**不许**藏进折叠面板或次要页面。
- *
- *   F4.4 —— **「只显示待确认项」过滤可用**。默认只显示未确认项，
- *           关掉开关才显示全部。
- *
- * ⚠️ 术语（N3.3）：内部叫"闸口/HITL"，界面叫「**待确认事项**」。
- *    按钮文案必须严格照用：G2 = 确认无误,继续 / 退回重做 / 改完继续；
- *    G3 = 审定通过 / 退回修改 / 改完继续。
- */
-
+/** 内容确认：四要素并排展示；逐条核对只属于本轮未提交草稿。 */
 import * as api from '../api-client.js';
 import { TEXT, G2_BUTTONS, G3_BUTTONS, FACTOR_LABELS, statusText } from '../strings.js';
 
 export async function renderGate(view, meeting, opts, shell) {
+  const { level } = opts;
   const S = shell;
-  const { level } = opts; // 'G2' | 'G3'
+  const pending = meeting.run?.pending_gate;
+  const roundToken = api.gateRoundToken(pending);
   view.replaceChildren();
-
-  // ── 页头 ────────────────────────────────────────────────────────────────
   const head = document.createElement('section');
   head.className = 'card';
-  const h2 = document.createElement('h2');
-  h2.textContent = level === 'G2' ? '待确认议题' : '待审定纪要';
-  head.appendChild(h2);
-
-  const statusRow = document.createElement('div');
-  statusRow.className = 'row';
-  const badge = document.createElement('span');
-  badge.className = 'badge pending';
-  badge.textContent = statusText(meeting.status);
-  statusRow.appendChild(badge);
-  head.appendChild(statusRow);
-
-  // ── G2：待确认议题 + 四要素 ────────────────────────────────────────────
-  let items = [];
-  if (level === 'G2') {
-    const data = await api.call('GET', `/meetings/${meeting.meeting_id}/topics`);
-    // 后端的议题结构里，`confirmed` 标记是否已确认（用于 F4.4 过滤）。
-    items = Array.isArray(data) ? data : (data.topics || []);
-
-    // F4.4：过滤开关
-    const filterRow = document.createElement('div');
-    filterRow.className = 'row';
-    filterRow.style.marginTop = 'var(--sp-4)';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.id = 'only-pending';
-    cb.checked = true;
-    const lab = document.createElement('label');
-    lab.htmlFor = 'only-pending';
-    lab.textContent = TEXT.ONLY_PENDING; // 「只显示待确认项」
-    filterRow.appendChild(cb);
-    filterRow.appendChild(lab);
-    head.appendChild(filterRow);
-
-    head.querySelector('#only-pending').addEventListener('change', (e) => {
-      renderItems(e.target.checked);
-    });
-  }
-
+  const heading = document.createElement('h2');
+  heading.textContent = level === 'G2' ? '待确认议题' : '待审定纪要';
+  head.appendChild(heading);
+  const status = document.createElement('p');
+  status.textContent = statusText(meeting.status);
+  head.appendChild(status);
+  const notice = document.createElement('p');
+  notice.textContent = '未提交：逐条已核对和编辑尚未提交，刷新后需重新核对。';
+  head.appendChild(notice);
   view.appendChild(head);
-
-  // ── 列表容器 ───────────────────────────────────────────────────────────
+  let invalid = false;
+  let submitting = false;
+  let revision = 0;
+  const draftReviewed = new Set();
+  let draft = JSON.parse(JSON.stringify(pending?.payload || {}));
   const listWrap = document.createElement('section');
   listWrap.className = 'card';
   view.appendChild(listWrap);
+  let items = [];
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.id = 'only-pending';
+  cb.checked = true;
+
+  function invalidate() {
+    invalid = true;
+    draft = {};
+    draftReviewed.clear();
+    diffWrap.replaceChildren();
+    notice.textContent = '送审内容已更新，旧草稿已作废，请重新载入。';
+    view.querySelectorAll('input, textarea, button').forEach(el => { el.disabled = true; });
+    const reload = document.createElement('button');
+    reload.textContent = '重新载入';
+    reload.addEventListener('click', () => S.route(meeting.meeting_id));
+    notice.appendChild(reload);
+  }
+
+  async function currentCheckpoint() {
+    const current = await api.call('GET', `/meetings/${meeting.meeting_id}`);
+    if (!view.contains(head)) return false;
+    if (api.gateRoundToken(current.run?.pending_gate) !== roundToken || current.run?.pending_gate?.gate !== level) {
+      invalidate();
+      return false;
+    }
+    return true;
+  }
+
+  function editField(parent, label, value, save) {
+    const lab = document.createElement('label');
+    lab.textContent = label;
+    const input = document.createElement('textarea');
+    input.value = value ?? '';
+    input.addEventListener('input', () => {
+      save(input.value);
+      revision += 1;
+      diffWrap.replaceChildren();
+      notice.textContent = '未提交：编辑和已核对标记尚未提交。';
+    });
+    lab.appendChild(input);
+    parent.appendChild(lab);
+  }
 
   function renderItems(onlyPending) {
     listWrap.replaceChildren();
-
-    const shown = onlyPending ? items.filter((t) => !t.confirmed) : items;
-
-    if (shown.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'empty';
-      empty.textContent = onlyPending
-        ? '没有待确认的议题了。'
-        : '暂无可显示的议题。';
-      listWrap.appendChild(empty);
-      return;
-    }
-
-    const list = document.createElement('div');
-    list.className = 'factor-list';
-
+    const shown = items.filter((t, index) => {
+      const serverConfirmed = t.confirmed === true;
+      const reviewed = draftReviewed.has(index);
+      return !onlyPending || isPending(serverConfirmed, reviewed);
+    });
     for (const t of shown) {
+      const index = items.indexOf(t);
       const card = document.createElement('div');
       card.className = 'factor';
-
-      // 标题行
-      const hd = document.createElement('div');
-      hd.className = 'factor-head';
-      const title = document.createElement('span');
-      title.className = 'factor-title';
-      title.textContent = t.title || '（未命名议题）';
-      hd.appendChild(title);
-
-      const risk = document.createElement('span');
-      risk.className = `badge ${t.risk === 'high' ? 'fail' : t.risk === 'medium' ? 'pending' : ''}`;
-      risk.textContent = `${FACTOR_LABELS.risk}：${riskText(t.risk)}`;
-      hd.appendChild(risk);
-      card.appendChild(hd);
-
-      // ★ 四要素：并排可见（F4.2）
+      const title = document.createElement('h3');
+      title.textContent = draft.topics[index].title;
+      card.appendChild(title);
       const four = document.createElement('div');
       four.className = 'four';
-
-      four.appendChild(
-        factorItem(FACTOR_LABELS.raw, t.raw_text || t.source_text || '（无）')
-      );
-      four.appendChild(
-        factorItem(FACTOR_LABELS.extracted, t.extracted || t.title || '（无）')
-      );
+      const raw = factorItem(FACTOR_LABELS.raw, t.raw_text);
+      four.appendChild(raw);
+      four.appendChild(factorItem(FACTOR_LABELS.extracted, t.extracted));
       four.appendChild(factorItem(FACTOR_LABELS.risk, riskText(t.risk)));
-      four.appendChild(
-        factorItem(FACTOR_LABELS.basis, t.basis || t.rationale || '（无）')
-      );
-
+      const basis = factorItem(FACTOR_LABELS.basis, t.basis.length ? '' : '暂无出处，请核对');
+      for (const source of t.basis) {
+        const jump = document.createElement('button');
+        jump.className = 'btn';
+        jump.textContent = `${source.segment_id} ${timecode(source.start_ms)}`;
+        jump.addEventListener('click', () => {
+          // 跳到该时间对应的原文；没有音频播放器时不伪称已开始播放。
+          raw.querySelector('.value').textContent = `${timecode(source.start_ms)} ${source.text}`;
+          raw.scrollIntoView({ block: 'center' });
+        });
+        basis.appendChild(jump);
+      }
+      four.appendChild(basis);
       card.appendChild(four);
-      list.appendChild(card);
+      const confidence = document.createElement('p');
+      confidence.className = t.low_confidence ? 'low-confidence' : '';
+      confidence.textContent = `来源转写置信：${t.confidence == null ? '未提供' : t.confidence}${t.low_confidence ? '（低置信，请核对）' : ''}`;
+      card.appendChild(confidence);
+      for (const field of ['title', 'discussion', 'readings']) {
+        editField(card, field === 'title' ? '议题' : field === 'discussion' ? '讨论内容' : '学习材料（每行一项）',
+          field === 'readings' ? (draft.topics[index][field] || []).join('\n') : draft.topics[index][field],
+          value => { draft.topics[index][field] = field === 'readings' ? (value ? value.split('\n') : []) : value; });
+      }
+      const reviewed = document.createElement('input');
+      reviewed.type = 'checkbox';
+      reviewed.checked = draftReviewed.has(index);
+      reviewed.addEventListener('change', () => {
+        if (reviewed.checked) draftReviewed.add(index); else draftReviewed.delete(index);
+        renderItems(cb.checked);
+      });
+      const label = document.createElement('label');
+      label.textContent = '已核对（未提交）';
+      label.appendChild(reviewed);
+      card.appendChild(label);
+      listWrap.appendChild(card);
     }
-
-    listWrap.appendChild(list);
+    if (!shown.length) listWrap.textContent = '没有待确认的议题了。关闭过滤可继续修改。';
+    // 提交完整列表并保留全部只读字段；事项不允许用户改归属。
+    for (const name of ['resolutions', 'action_items']) {
+      draft[name].forEach((item, index) => {
+        const card = document.createElement('div');
+        card.className = 'factor';
+        for (const field of ['text', 'owner', 'deadline']) {
+          editField(card, ({ text: '事项', owner: '责任人', deadline: '期限' })[field], item[field],
+            value => { draft[name][index][field] = value; });
+        }
+        listWrap.appendChild(card);
+      });
+    }
   }
 
-  function factorItem(label, value) {
-    const d = document.createElement('div');
-    d.className = 'item';
-    const l = document.createElement('div');
-    l.className = 'label';
-    l.textContent = label;
-    const v = document.createElement('div');
-    v.className = 'value';
-    v.textContent = String(value);
-    d.appendChild(l);
-    d.appendChild(v);
-    return d;
-  }
-
+  const diffWrap = document.createElement('section');
+  diffWrap.className = 'card gate-diff';
   if (level === 'G2') {
-    renderItems(true); // 默认只显示待确认项
+    const data = await api.call('GET', `/meetings/${meeting.meeting_id}/topics`);
+    if (!(await currentCheckpoint())) return;
+    items = data.topics || [];
+    // 编辑基准取 checkpoint 原始载荷；展示投影绝不回传为抽取正文。
+    draft = JSON.parse(JSON.stringify({ topics: pending.payload.topics || [],
+      resolutions: pending.payload.resolutions || [], action_items: pending.payload.action_items || [] }));
+    const label = document.createElement('label');
+    label.htmlFor = 'only-pending';
+    label.textContent = TEXT.ONLY_PENDING;
+    head.appendChild(cb);
+    head.appendChild(label);
+    head.querySelector('#only-pending').addEventListener('change', e => renderItems(e.target.checked));
+    renderItems(true);
   } else {
-    // G3：展示纪要草稿（审定对象）
-    const list = document.createElement('div');
-    list.className = 'factor-list';
-    const card = document.createElement('div');
-    card.className = 'factor';
-
-    let mm = '';
-    try {
-      const data = await api.call('GET', `/meetings/${meeting.meeting_id}/minutes`);
-      mm = data.minutes_markdown || '';
-    } catch {
-      mm = '';
-    }
-    const pre = document.createElement('pre');
-    pre.style.whiteSpace = 'pre-wrap';
-    pre.style.fontFamily = 'var(--font)';
-    pre.textContent = mm || '正在起草纪要，请稍候……';
-    card.appendChild(pre);
-    list.appendChild(card);
-    listWrap.appendChild(list);
+    const data = await api.call('GET', `/meetings/${meeting.meeting_id}/minutes`);
+    if (!(await currentCheckpoint())) return;
+    draft = { minutes_markdown: data.minutes_markdown || '' };
+    editField(listWrap, '纪要正文（未提交）', draft.minutes_markdown, value => { draft.minutes_markdown = value; });
   }
 
-  // ── 决策按钮 ───────────────────────────────────────────────────────────
   const actions = document.createElement('section');
   actions.className = 'card';
-  const row = document.createElement('div');
-  row.className = 'row';
-
+  const preview = document.createElement('button');
+  preview.className = 'btn';
+  preview.textContent = '查看差异：系统生成版 / 人工修改版';
+  preview.addEventListener('click', async () => {
+    const requestedRevision = revision;
+    try {
+      if (invalid || !(await currentCheckpoint())) return;
+      const data = await api.call('POST', `/meetings/${meeting.meeting_id}/gate/${level}/diff`, api.gateRequest(roundToken, { payload: draft }));
+      if (invalid || revision !== requestedRevision || !view.contains(head)) return;
+      renderDiff(diffWrap, data.segments);
+    } catch (err) {
+      await handleError(err);
+    }
+  });
+  actions.appendChild(preview);
   const labels = level === 'G2' ? G2_BUTTONS : G3_BUTTONS;
-  const decisions = [
-    { key: 'approve', cls: 'btn-primary' },
-    { key: 'reject', cls: 'btn btn-danger' },
-    { key: 'edit', cls: 'btn' },
-  ];
-
-  for (const d of decisions) {
-    const b = document.createElement('button');
-    b.className = `btn ${d.cls}`;
-    b.textContent = labels[d.key];
-    b.addEventListener('click', async () => {
+  for (const decision of ['approve', 'reject', 'edit']) {
+    const button = document.createElement('button');
+    button.className = 'btn';
+    button.textContent = labels[decision];
+    button.addEventListener('click', async () => {
+      if (invalid || submitting) return;
+      submitting = true;
+      actions.querySelectorAll('button').forEach(el => { el.disabled = true; });
       try {
-        const res = await api.call(
-          'POST',
-          `/meetings/${meeting.meeting_id}/gate/${level}/decide`,
-          { decision: d.key, operator: S.ctx.operator }
-        );
-        const next = res.next_state;
-        if (next === 'archived' || next === 'G3_awaiting') {
-          await S.route(meeting.meeting_id);
-        } else {
-          await S.route(meeting.meeting_id);
-        }
+        if (!(await currentCheckpoint())) return;
+        await api.call('POST', `/meetings/${meeting.meeting_id}/gate/${level}/decide`, api.gateRequest(roundToken, {
+          decision, operator: S.ctx.operator,
+          ...(decision === 'edit' ? { payload: draft } : {}),
+        }));
+        await S.route(meeting.meeting_id);
       } catch (err) {
-        S.showError(err);
+        await handleError(err);
+      } finally {
+        submitting = false;
+        if (!invalid) actions.querySelectorAll('button').forEach(el => { el.disabled = false; });
       }
     });
-    row.appendChild(b);
+    actions.appendChild(button);
   }
-
-  actions.appendChild(row);
   view.appendChild(actions);
+  view.appendChild(diffWrap);
+
+  async function handleError(err) {
+    if (err.code === 'E4001') await currentCheckpoint();
+    S.showError(err);
+  }
+  // 轮询只检查令牌，不覆盖本轮编辑。离开页面后停止。
+  async function watchCheckpoint() {
+    if (!view.contains(head) || invalid) return;
+    try { if (!(await currentCheckpoint())) return; } catch (err) { S.showError(err); }
+    if (view.contains(head) && !invalid) setTimeout(watchCheckpoint, 3000);
+  }
+  await watchCheckpoint();
+}
+
+function isPending(serverConfirmed, draftReviewed) {
+  return !(serverConfirmed || draftReviewed);
+}
+
+function factorItem(label, value) {
+  const item = document.createElement('div');
+  item.className = 'item';
+  const lab = document.createElement('div');
+  lab.className = 'label';
+  lab.textContent = label;
+  const text = document.createElement('div');
+  text.className = 'value';
+  text.textContent = value || '暂无出处，请核对';
+  item.append(lab, text);
+  return item;
+}
+
+function renderDiff(container, segments) {
+  container.replaceChildren();
+  for (const segment of segments) {
+    const block = document.createElement('div');
+    block.className = `diff-${segment.type}`;
+    const pre = document.createElement('pre');
+    pre.textContent = segment.type === 'unchanged' ? segment.lines.join('\n\n') :
+      [segment.old ? `系统生成版：\n${segment.old.join('\n\n')}` : '',
+        segment.new ? `人工修改版：\n${segment.new.join('\n\n')}` : ''].filter(Boolean).join('\n\n');
+    if (segment.type === 'unchanged') {
+      const toggle = document.createElement('button');
+      toggle.textContent = `展开未变段落${segment.elided ? `（已省略 ${segment.elided} 段）` : ''}`;
+      pre.hidden = true;
+      toggle.addEventListener('click', () => { pre.hidden = !pre.hidden; });
+      block.appendChild(toggle);
+    }
+    block.appendChild(pre);
+    container.appendChild(block);
+  }
+}
+
+function timecode(ms) {
+  if (!Number.isFinite(ms)) return '时间未提供';
+  const seconds = Math.floor(ms / 1000);
+  return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
+    .map(value => String(value).padStart(2, '0')).join(':');
 }
 
 function riskText(risk) {
-  switch (risk) {
-    case 'high':
-      return '高';
-    case 'medium':
-      return '中';
-    case 'low':
-      return '低';
-    default:
-      return '未评级';
-  }
+  return ({ high: '高', medium: '中', low: '低' })[risk] || '未评级';
 }
