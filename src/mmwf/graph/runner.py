@@ -278,10 +278,13 @@ class GraphRunner:
         self._terminal_override = None
         self._cancel_reason = ""
 
-        # 有音频就从 ingest 开始，没有音频（文字稿导入）同样从 ingest 开始 ——
-        # ingest 节点自己判断"没音频就跳过"（见 nodes/ingest.py）。
         logger.info("启动流水线：%s", self.meeting_id)
-        self._invoke(state)
+        if state.get("record_markdown") and not state.get("audio_paths"):
+            # IT-03 / F1.6: prepared text enters review without invoking ASR.
+            self.app.update_state(self._cfg, state, as_node=S.NODE_TRANSCRIBE)
+            self._invoke(None)
+        else:
+            self._invoke(state)
         return self.status()
 
     def resume(self, decision: dict[str, Any]) -> RunStatus:
@@ -365,6 +368,9 @@ class GraphRunner:
             error = GroundingBlockedError()
             self._touch(S.STATUS_FAILED, last_error=error.user_message)
             raise error
+        # Meeting lists read the business tables, while detail reads the graph.
+        # Publish the same gate/terminal state after every completed invocation.
+        self._touch(self.status().status)
 
     # -- 查询 ----------------------------------------------------------
 
@@ -436,12 +442,10 @@ class GraphRunner:
         self._touch(S.STATUS_FAILED, last_error=error)
 
     def _touch(self, status: str, *, last_error: str | None = None) -> None:
-        """直接更新 `task_state` 的状态列（只用于取消/失败这类外部动作）。
-
-        流水线**正常推进**时不用它 —— 那时由各节点调
-        `_base.touch_task_state` 自己打点。本函数只服务于
-        "从图外面改状态"的两个场景（取消 / 失败）。
-        """
+        """同步任务状态；会议只同步闸口、归档与失败，保留已有诊断。"""
+        if status not in S.GRAPH_STATUS:
+            logger.warning("忽略未知任务状态：%s", status)
+            return
         db = self._db_path()
         if db is None:
             logger.debug("没有 db 路径，跳过 task_state 更新")
@@ -451,11 +455,11 @@ class GraphRunner:
         try:
             with dbmod.connect_ctx(db) as conn:
                 conn.execute(
-                    "UPDATE task_state SET status = ?, last_error = ?, "
+                    "UPDATE task_state SET status = ?, last_error = COALESCE(?, last_error), "
                     "updated_at = ? WHERE task_id = ?",
                     (status, last_error, _now_iso(), self.meeting_id),
                 )
-                if status == S.STATUS_FAILED:
+                if status in S.GATE_STATUSES or status in {S.STATUS_ARCHIVED, S.STATUS_FAILED}:
                     conn.execute("UPDATE meeting SET status = ?, updated_at = ? WHERE meeting_id = ?",
                                  (status, _now_iso(), self.meeting_id))
         except Exception:  # pragma: no cover

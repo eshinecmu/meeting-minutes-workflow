@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import threading
+from contextlib import contextmanager
 from typing import Any
 
 from mmwf.graph.idempotency import content_hash
@@ -83,6 +84,10 @@ class Runtime:
         #: 语义（G1~G4 的闸口决策天然要串行）。
         self._meeting_locks: dict[str, threading.RLock] = {}
         self._locks_guard = threading.Lock()
+        # Local ASR startup is a FIFO queue (IT-14); gate waits hold no slot.
+        self._processing_condition = threading.Condition()
+        self._processing_next = 0
+        self._processing_serving = 0
 
     #
 
@@ -101,6 +106,21 @@ class Runtime:
             return lock
 
     # -- 服务构造 ------------------------------------------------------
+
+    @contextmanager
+    def processing_slot(self):
+        """Serialize submitted starts without holding a slot at human gates."""
+        with self._processing_condition:
+            ticket = self._processing_next
+            self._processing_next += 1
+            self._processing_condition.notify_all()
+            self._processing_condition.wait_for(lambda: ticket == self._processing_serving)
+        try:
+            yield
+        finally:
+            with self._processing_condition:
+                self._processing_serving += 1
+                self._processing_condition.notify_all()
 
     def ingest_service(self, meeting_id: str):
         """构造 `IngestService`。

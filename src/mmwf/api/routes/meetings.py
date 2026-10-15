@@ -126,6 +126,10 @@ def register(router: APIRouter, rt: Runtime) -> None:
                 [Path(p) for p in audio_paths],
                 chunk_dir=_chunk_dir(rt.cfg, meeting_id),
             )
+            # Preserve accepted inputs across the separate create/start requests.
+            rt.filestore(meeting_id).write_json("audio/input.json", {
+                "audio_paths": [str(item.source_path) for item in batch.succeeded],
+            })
             total_chunks = 0
             for item in batch.succeeded:
                 total_chunks += int(item.chunk_count)
@@ -170,11 +174,20 @@ def register(router: APIRouter, rt: Runtime) -> None:
         # 不是 context manager → `TypeError: 'dict' object does not
         # support the context manager protocol` → `/start` **恒定 E9001**。
         row = _require_meeting(meeting_id, rt.db_path)
-        _ensure_text_input(meeting_id, row, rt.cfg)
         with rt.meeting_lock(meeting_id):
+            store = rt.filestore(meeting_id)
+            initial = {}
+            if store.exists("audio/input.json"):
+                initial = store.read_json("audio/input.json")
+            if not initial.get("audio_paths"):
+                _ensure_text_input(meeting_id, row, rt.cfg)
+                record_rel = _latest_record_rel(store)
+                if record_rel:
+                    initial["record_markdown"] = store.read_text(record_rel)
             runner = rt.runner(meeting_id)
             try:
-                status = runner.start()
+                with rt.processing_slot():
+                    status = runner.start(initial)
                 rt.gate_service().observe_pending(meeting_id, runner)
                 return env.ok(status.to_dict(), "已开始处理")
             finally:
