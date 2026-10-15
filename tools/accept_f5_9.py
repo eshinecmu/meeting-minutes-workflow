@@ -91,12 +91,14 @@ def _run_evidence(number: int, tmp: Path) -> str:
                *capture_flags, '-p', 'no:cacheprovider', '-p', 'accept_f5_9',
                '--basetemp', str(tmp / 'data'), '--junitxml', str(report), *CASES[number]]
     env = dict(os.environ)
+    # 父子进程统一 UTF-8，不继承中文 Windows 的控制台/重定向编码。
+    env["PYTHONIOENCODING"] = "utf-8"
     env['PYTHONPATH'] = os.pathsep.join((str(PROJECT_ROOT / 'tools'), str(PROJECT_ROOT / 'src')))
     env['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
     env.pop('PYTEST_ADDOPTS', None)
     print('命令：' + shlex.join(command), flush=True)
     result = subprocess.run(command, cwd=PROJECT_ROOT, env=env, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            stdout=subprocess.PIPE, encoding="utf-8", errors="replace", stderr=subprocess.STDOUT)
     print(result.stdout, end='', flush=True)
     try:
         executed, passed, failed, errors, skipped, cases = _counts(report)

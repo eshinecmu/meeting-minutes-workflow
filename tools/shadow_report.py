@@ -135,7 +135,8 @@ def write_reports(output, summary):
     reserved = False
     try:
         for name, content in files.items():
-            (stage / name).write_text(content, encoding="utf-8")
+            # CSV / Markdown / JSON 的证据字节统一为 LF，禁止宿主换行转换。
+            (stage / name).write_text(content, encoding="utf-8", newline="")
         output.mkdir(exist_ok=False)
         reserved = True
         for name in ("records.csv", "records.json", "report.md", "report.json"):

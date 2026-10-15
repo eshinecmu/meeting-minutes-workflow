@@ -181,7 +181,7 @@ def _run_word_probe(docx: Path, tmp: Path) -> dict:
 
     proc = subprocess.run(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(ps)],
-        capture_output=True, text=True, encoding="utf-8", timeout=180,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
     )
     if not out.exists():
         raise RuntimeError(
@@ -202,7 +202,9 @@ def _looks_like_zip_or_ole(p: Path) -> bool:
     扩展名两者一样。只看文件头才分得清"产品缺陷"和"夹具"。
     """
     try:
-        head = p.open("rb").read(8)
+        # 探测结束即关闭，Windows 后续替换或清理文件不能依赖 GC 释放句柄。
+        with p.open("rb") as handle:
+            head = handle.read(8)
     except OSError:
         return False
     return head.startswith(b"PK\x03\x04") or head.startswith(

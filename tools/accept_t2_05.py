@@ -54,13 +54,15 @@ def _run_evidence(number: int, tmp: Path) -> bool:
                "-p", "accept_t2_05", "--basetemp", str(tmp / "data"), "--junitxml", str(report),
                *CASES[number]]
     env = dict(os.environ)
+    # 父子进程统一 UTF-8，不继承中文 Windows 的控制台/重定向编码。
+    env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONPATH"] = os.pathsep.join((str(PROJECT_ROOT / "tools"), str(PROJECT_ROOT / "src")))
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     env.pop("PYTEST_ADDOPTS", None)
     # 原样记录实际 argv 和 stdout；临时路径也保留，便于复核。
     print("命令：" + shlex.join(command), flush=True)
     result = subprocess.run(command, cwd=PROJECT_ROOT, env=env, text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            stdout=subprocess.PIPE, encoding="utf-8", errors="replace", stderr=subprocess.STDOUT)
     print(result.stdout, end="")
     if not report.exists():
         print("计数：executed=0 passed=0 failed=0 error=1 skipped=0")

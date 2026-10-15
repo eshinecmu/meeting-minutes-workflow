@@ -65,6 +65,7 @@ import threading
 import shutil
 import subprocess
 from dataclasses import dataclass, field
+from os.path import normcase
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
@@ -115,7 +116,8 @@ _PDF_LOCKS_GUARD = threading.Lock()
 def delivery_lock(store: FileStore) -> threading.RLock:
     """同会直接服务、下载、归档和撤销共用的可重入锁。"""
     with _PDF_LOCKS_GUARD:
-        return _PDF_LOCKS.setdefault(str(store.store_root.resolve()), threading.RLock())
+        # Windows 的路径大小写别名必须共用锁，否则同一交付件可被并发覆盖。
+        return _PDF_LOCKS.setdefault(normcase(str(store.store_root.resolve())), threading.RLock())
 
 
 

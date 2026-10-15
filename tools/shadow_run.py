@@ -41,7 +41,7 @@ def read_json(path):
 
 
 def write_json(path, value):
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
 
 
 def input_path(base, value):
@@ -264,7 +264,7 @@ def run_meeting(batch, meeting, paths, output):
         issues.append({**issue, "issue_id": fingerprint(identity)})
     write_json(folder / "issues.json", {**common, "issues": issues, "complete": status != "failed"})
     if status == "generated":
-        (folder / "candidate.md").write_text("\n\n".join(labels) + "\n\n" + state["minutes_markdown"], encoding="utf-8")
+        (folder / "candidate.md").write_text("\n\n".join(labels) + "\n\n" + state["minutes_markdown"], encoding="utf-8", newline="")
     score = score_template()
     score.update(meeting_id=meeting.meeting_id, candidate_fingerprint=candidate["candidate_fingerprint"],
                  source_fingerprint=candidate["source_fingerprint"], template_fingerprint=candidate["template_fingerprint"])
@@ -295,7 +295,7 @@ def run_batch(manifest_path, output):
         writer.writeheader()
         writer.writerows(records)
     try:
-        code_version = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip()
+        code_version = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         code_version = "unknown"
     # 同时记录执行链源码指纹；HEAD 不能代表尚未提交的工具实现。

@@ -64,7 +64,7 @@ def _kill_mmwf() -> None:
         ["taskkill", "/F", "/IM", "mmwf.exe"],
         capture_output=True,
         text=True,
-        errors="replace",
+        encoding="utf-8", errors="replace",
     )
     # 后端是 python 子进程，父进程被强杀后可能残留；按命令行匹配清理。
     subprocess.run(
@@ -76,7 +76,7 @@ def _kill_mmwf() -> None:
         ],
         capture_output=True,
         text=True,
-        errors="replace",
+        encoding="utf-8", errors="replace",
     )
     time.sleep(0.8)
 
@@ -97,12 +97,11 @@ def _reset_handshake() -> None:
 
 def _window_titles() -> list[str]:
     """用 tasklist /V 取窗口标题（比 WMIC 稳，比 psutil 少依赖）。"""
+    # 与开发探针一致：中文 Windows 的 tasklist 返回 GBK，保留字节后显式解码。
     out = subprocess.run(
         ["tasklist", "/FI", "IMAGENAME eq mmwf.exe", "/V", "/FO", "CSV"],
         capture_output=True,
-        text=True,
-        errors="replace",
-    ).stdout
+    ).stdout.decode("gbk", errors="replace")
     titles: list[str] = []
     reader = csv.reader(io.StringIO(out))
     next(reader, None)  # 表头
@@ -118,9 +117,7 @@ def _proc_count() -> int:
     out = subprocess.run(
         ["tasklist", "/FI", "IMAGENAME eq mmwf.exe", "/FO", "CSV"],
         capture_output=True,
-        text=True,
-        errors="replace",
-    ).stdout
+    ).stdout.decode("gbk", errors="replace")
     return max(0, sum(1 for line in out.splitlines() if line.startswith('"mmwf.exe"')))
 
 

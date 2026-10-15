@@ -1086,7 +1086,7 @@ def check_layering_and_deps(tmp: Path) -> bool:
         proc = subprocess.run(
             [sys.executable, str(p)], cwd=str(PROJECT_ROOT),
             capture_output=True, text=True,
-            env={**os.environ, "PYTHONUTF8": "1"},
+            encoding="utf-8", errors="replace", env={**os.environ, "PYTHONUTF8": "1"},
         )
         ok &= _assert(proc.returncode == 0, f"{tool} 通过",
                       (proc.stdout or proc.stderr).strip()[-200:]

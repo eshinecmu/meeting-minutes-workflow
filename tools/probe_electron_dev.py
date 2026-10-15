@@ -59,7 +59,7 @@ CRASH_MARKERS = (
 
 
 def _kill() -> None:
-    subprocess.run(["taskkill", "/F", "/IM", PROC_NAME], capture_output=True, errors="replace")
+    subprocess.run(["taskkill", "/F", "/IM", PROC_NAME], capture_output=True, encoding="utf-8", errors="replace")
     subprocess.run(
         [
             "powershell", "-NoProfile", "-Command",
@@ -68,7 +68,7 @@ def _kill() -> None:
             "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
         ],
         capture_output=True,
-        errors="replace",
+        encoding="utf-8", errors="replace",
     )
     time.sleep(0.8)
 

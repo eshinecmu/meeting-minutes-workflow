@@ -155,7 +155,7 @@ class WS:
 # ---------------------------------------------------------------------------
 def _kill() -> None:
     for name in ("electron.exe", "mmwf.exe"):
-        subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, errors="replace")
+        subprocess.run(["taskkill", "/F", "/IM", name], capture_output=True, encoding="utf-8", errors="replace")
     subprocess.run(
         [
             "powershell", "-NoProfile", "-Command",
@@ -164,7 +164,7 @@ def _kill() -> None:
             "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
         ],
         capture_output=True,
-        errors="replace",
+        encoding="utf-8", errors="replace",
     )
     time.sleep(0.8)
 

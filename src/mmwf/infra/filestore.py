@@ -48,6 +48,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from os.path import normcase
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
@@ -195,7 +196,7 @@ class FileStore:
         if not self.encrypt_enabled:
             return False
         rel_path = relative_posix(rel_path)
-        first = Path(rel_path).parts[0] if Path(rel_path).parts else ""
+        first = normcase(Path(rel_path).parts[0]) if Path(rel_path).parts else ""
         return first not in PLAINTEXT_AREAS
 
     # ------------------------------------------------------------------
@@ -361,12 +362,12 @@ class FileStore:
     def _append_manifest(self, entry: ManifestEntry) -> None:
         """追加一条记录（同 path 覆盖：同一路径重复落盘以最后一次为准）。"""
         self.store_root.mkdir(parents=True, exist_ok=True)
-        entries = [e for e in self.manifest() if e.path != entry.path]
+        entries = [e for e in self.manifest() if normcase(e.path) != normcase(entry.path)]
         entries.append(entry)
         self._flush_manifest(entries)
 
     def _remove_manifest(self, rel_path: str) -> None:
-        entries = [e for e in self.manifest() if e.path != relative_posix(rel_path)]
+        entries = [e for e in self.manifest() if normcase(e.path) != normcase(relative_posix(rel_path))]
         self._flush_manifest(entries)
 
     def _flush_manifest(self, entries: list[ManifestEntry]) -> None:
@@ -437,7 +438,8 @@ class FileStore:
         """
         problems: list[str] = []
         entries = self.manifest()
-        recorded = {e.path for e in entries}
+        # Windows 上大小写不同的引用仍指向同一文件；持久化名称保留原样。
+        recorded = {normcase(e.path) for e in entries}
 
         for e in entries:
             p = self.resolve(e.path)
@@ -459,7 +461,7 @@ class FileStore:
                 continue
             if rel.parts and rel.parts[0] == ".tmp":
                 continue
-            if relative_posix(rel) not in recorded:
+            if normcase(relative_posix(rel)) not in recorded:
                 problems.append(f"存在未登记的文件：{relative_posix(rel)}")
 
         return problems
