@@ -2,65 +2,65 @@
 SYNTHETIC / 合成数据，非真实验收结果；隔离临时目录，无真实模型 / 无网络。
 
 标准 1：批量生成但不交付
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/1/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/1/report.xml tests/integration/test_shadow_pipeline.py::test_synthetic_equals_production_pre_g3_and_zero_delivery_writes
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/1/data --junitxml <tmp>/t205_lt7r6d0k/1/report.xml tests/integration/test_shadow_pipeline.py::test_synthetic_equals_production_pre_g3_and_zero_delivery_writes
 .                                                                        [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/1/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/1/report.xml -
 1 passed in 0.25s
 计数：executed=1 passed=1 failed=0 error=0 skipped=0
   PASS 定向证据 1 项，失败 0，错误 0，跳过 0
 
 标准 2：安全失败与隔离
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/2/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/2/report.xml tests/integration/test_shadow_pipeline.py
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/2/data --junitxml <tmp>/t205_lt7r6d0k/2/report.xml tests/integration/test_shadow_pipeline.py
 .................                                                        [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/2/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/2/report.xml -
 17 passed in 0.48s
 计数：executed=17 passed=17 failed=0 error=0 skipped=0
   PASS 定向证据 17 项，失败 0，错误 0，跳过 0
 
 标准 3：人工评分与记录表
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/3/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/3/report.xml tests/contract/test_shadow_contract.py tests/unit/test_shadow_scoring.py::test_score_binding_and_locations_reject
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/3/data --junitxml <tmp>/t205_lt7r6d0k/3/report.xml tests/contract/test_shadow_contract.py tests/unit/test_shadow_scoring.py::test_score_binding_and_locations_reject
 .................................................................        [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/3/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/3/report.xml -
 65 passed in 0.23s
 计数：executed=65 passed=65 failed=0 error=0 skipped=0
   PASS 定向证据 65 项，失败 0，错误 0，跳过 0
 
 标准 4：五维与建议阈值
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/4/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/4/report.xml tests/unit/test_shadow_scoring.py tests/contract/test_shadow_contract.py::test_threshold_ranges_and_redlines
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/4/data --junitxml <tmp>/t205_lt7r6d0k/4/report.xml tests/unit/test_shadow_scoring.py tests/contract/test_shadow_contract.py::test_threshold_ranges_and_redlines
 .........................................................                [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/4/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/4/report.xml -
 57 passed in 0.18s
 计数：executed=57 passed=57 failed=0 error=0 skipped=0
   PASS 定向证据 57 项，失败 0，错误 0，跳过 0
 
 标准 5：放开与渐进授权
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/5/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/5/report.xml tests/unit/test_shadow_scoring.py::test_divergence_AND_counts_items_and_meetings tests/unit/test_shadow_scoring.py::test_real_stage2_conditions_SYNTHETIC_METADATA_ONLY tests/unit/test_shadow_report.py::test_report_json_markdown_records_same_source_and_pending_ledger
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/5/data --junitxml <tmp>/t205_lt7r6d0k/5/report.xml tests/unit/test_shadow_scoring.py::test_divergence_AND_counts_items_and_meetings tests/unit/test_shadow_scoring.py::test_real_stage2_conditions_SYNTHETIC_METADATA_ONLY tests/unit/test_shadow_report.py::test_report_json_markdown_records_same_source_and_pending_ledger
 .............                                                            [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/5/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/5/report.xml -
 13 passed in 0.05s
 计数：executed=13 passed=13 failed=0 error=0 skipped=0
   PASS 定向证据 13 项，失败 0，错误 0，跳过 0
 
 标准 6：附加风险计数
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/6/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/6/report.xml tests/unit/test_shadow_risks.py tests/unit/test_shadow_scoring.py::test_same_issue_cross_meetings_not_merged_and_optional_population_is_separate tests/unit/test_shadow_scoring.py::test_optional_action_population_relationship_validation
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/6/data --junitxml <tmp>/t205_lt7r6d0k/6/report.xml tests/unit/test_shadow_risks.py tests/unit/test_shadow_scoring.py::test_same_issue_cross_meetings_not_merged_and_optional_population_is_separate tests/unit/test_shadow_scoring.py::test_optional_action_population_relationship_validation
 ...............                                                          [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/6/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/6/report.xml -
 15 passed in 0.03s
 计数：executed=15 passed=15 failed=0 error=0 skipped=0
   PASS 定向证据 15 项，失败 0，错误 0，跳过 0
 
 标准 7：报告可复核
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/7/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/7/report.xml tests/unit/test_shadow_report.py tests/integration/test_shadow_cli.py
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/7/data --junitxml <tmp>/t205_lt7r6d0k/7/report.xml tests/unit/test_shadow_report.py tests/integration/test_shadow_cli.py
 ...................................                                      [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/7/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/7/report.xml -
 35 passed in 1.39s
 计数：executed=35 passed=35 failed=0 error=0 skipped=0
   PASS 定向证据 35 项，失败 0，错误 0，跳过 0
 
 标准 8：验收脚本可信
-命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/8/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/8/report.xml tests/unit/test_accept_t2_05.py
+命令：<repo>/.venv/bin/python -m pytest -o addopts= -q -p no:cacheprovider -p accept_t2_05 --basetemp <tmp>/t205_lt7r6d0k/8/data --junitxml <tmp>/t205_lt7r6d0k/8/report.xml tests/unit/test_accept_t2_05.py
 ...............                                                          [100%]
-- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/t205_lt7r6d0k/8/report.xml -
+- generated xml file: <tmp>/t205_lt7r6d0k/8/report.xml -
 15 passed in 3.38s
 计数：executed=15 passed=15 failed=0 error=0 skipped=0
   PASS 定向证据 15 项，失败 0，错误 0，跳过 0

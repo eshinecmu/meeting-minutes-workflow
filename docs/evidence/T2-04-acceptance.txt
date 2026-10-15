@@ -12,7 +12,7 @@ Claude 规则 9：遵循 D01～D10；D6 仅补验收与文档，无生产状态 
 ................                                                         [100%]
 =============================== warnings summary ===============================
 .venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18
-  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  <repo>/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
@@ -36,7 +36,7 @@ Claude 规则 9：遵循 D01～D10；D6 仅补验收与文档，无生产状态 
 .........                                                                [100%]
 =============================== warnings summary ===============================
 tests/integration/test_post_validation_pipeline.py::test_both_engines_use_template_snapshot_and_checks[naive-tpl-regular-meeting-v1]
-  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  <repo>/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
@@ -51,7 +51,7 @@ tests/integration/test_post_validation_pipeline.py::test_both_engines_use_templa
 ...............................                                          [100%]
 =============================== warnings summary ===============================
 tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repair
-  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  <repo>/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
@@ -66,7 +66,7 @@ tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repa
 ...........................                                              [100%]
 =============================== warnings summary ===============================
 tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repair
-  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  <repo>/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
@@ -90,7 +90,7 @@ tests/integration/test_accept_t2_04_evidence.py::test_real_joint_issues_and_repa
 .....................................                                    [100%]
 =============================== warnings summary ===============================
 .venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18
-  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  <repo>/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
