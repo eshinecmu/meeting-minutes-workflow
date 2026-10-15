@@ -920,7 +920,7 @@ class TestHappyPath:
         assert topics["data"]["topics"], "议题不该是空的"
 
         r = client.post(
-            f"{API}/meetings/{mid}/gate/G2/decide", json={"decision": "approve"}
+            f"{API}/meetings/{mid}/gate/G2/decide", json={"decision": "approve", "checkpoint_id": client.get(f"{API}/meetings/{mid}").json()["data"]["run"]["pending_gate"]["checkpoint_id"]}
         )
         body = r.json()
         assert body["ok"] is True, body
@@ -935,14 +935,14 @@ class TestHappyPath:
         assert client.post(f"{API}/meetings/{mid}/start").json()["ok"] is True
 
         g2 = client.post(
-            f"{API}/meetings/{mid}/gate/G2/decide", json={"decision": "approve"}
+            f"{API}/meetings/{mid}/gate/G2/decide", json={"decision": "approve", "checkpoint_id": client.get(f"{API}/meetings/{mid}").json()["data"]["run"]["pending_gate"]["checkpoint_id"]}
         ).json()
         assert g2["ok"] is True and g2["data"]["next_state"] == "G3_awaiting"
 
         assert client.get(f"{API}/meetings/{mid}/minutes").json()["ok"] is True
 
         g3 = client.post(
-            f"{API}/meetings/{mid}/gate/G3/decide", json={"decision": "approve"}
+            f"{API}/meetings/{mid}/gate/G3/decide", json={"decision": "approve", "checkpoint_id": client.get(f"{API}/meetings/{mid}").json()["data"]["run"]["pending_gate"]["checkpoint_id"]}
         ).json()
         assert g3["ok"] is True, g3
         assert g3["data"]["next_state"] == "archived"
@@ -1075,7 +1075,7 @@ class TestRecordBodySeparation:
         mid = _new_meeting(client, host="张三", attendees=["张三", "李四"])
         client.post(f"{API}/meetings/{mid}/start")
         r = client.post(
-            f"{API}/meetings/{mid}/gate/G2/decide", json={"decision": "approve"}
+            f"{API}/meetings/{mid}/gate/G2/decide", json={"decision": "approve", "checkpoint_id": client.get(f"{API}/meetings/{mid}").json()["data"]["run"]["pending_gate"]["checkpoint_id"]}
         ).json()
         issues = r["data"]["pending_gate"]["payload"]["validation_issues"]
         assert issues == [], [i["detail"] for i in issues]

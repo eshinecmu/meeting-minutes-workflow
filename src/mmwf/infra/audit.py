@@ -62,7 +62,7 @@ import logging
 import sqlite3
 import threading
 from collections.abc import Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -550,6 +550,7 @@ class AuditLogger:
         result: str = "success",
         *,
         ts: str | None = None,
+        _conn: sqlite3.Connection | None = None,
     ) -> AuditRecord:
         """写一条审计记录，返回落盘后的记录（含 log_id 与 row_hash）。
 
@@ -579,7 +580,9 @@ class AuditLogger:
         detail_json = detail_to_json(detail)
 
         # 锁只覆盖"读末尾 + 插入"，不覆盖校验和序列化（那些是纯计算）
-        with self._lock, self._write_conn() as conn:
+        if _conn is not None and not _conn.in_transaction:
+            raise AuditError("外部审计连接必须已开启写事务")
+        with self._lock, (nullcontext(_conn) if _conn is not None else self._write_conn()) as conn:
             row = conn.execute(
                 "SELECT row_hash FROM audit_log ORDER BY log_id DESC LIMIT 1"
             ).fetchone()

@@ -1129,3 +1129,16 @@ def test_audit_writes_do_not_break_wal_checkpoint(db_path: Path):
     _seed(a, 3)
     with connect(db_path) as conn:
         assert str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal"
+
+
+def test_gate_audit_shares_caller_transaction(audit, db_path):
+    """C3：外部登记事务提交前失败，审计 INSERT 也必须回滚。"""
+    from mmwf.infra.db import connect_ctx, transaction
+
+    with connect_ctx(db_path) as conn:
+        with pytest.raises(RuntimeError), transaction(conn, immediate=True):
+            audit.log("秘书", "gate_decision", "meeting", "m-1", {"auto": False, "changed": {}}, _conn=conn)
+            raise RuntimeError("事务提交前故障")
+    assert audit.count() == 0
+    audit.log("秘书", "gate_decision", "meeting", "m-1", {"auto": False, "changed": {}})
+    assert verify_chain(db_path).ok

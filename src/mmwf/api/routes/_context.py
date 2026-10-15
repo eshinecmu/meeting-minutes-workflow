@@ -223,6 +223,11 @@ class Runtime:
 
         return make_filestore(meeting_id, self.cfg.resolve_path(self.cfg.app.data_dir))
 
+    def gate_service(self):
+        from mmwf.app.services.gate import GateService
+
+        return GateService(self)
+
     def runner(self, meeting_id: str):
         """构造 GraphRunner。
 

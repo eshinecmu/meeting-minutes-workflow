@@ -62,9 +62,11 @@ class PendingGate:
     payload: dict
     evidence: list[dict]
     node_id: str
+    checkpoint_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "checkpoint_id": self.checkpoint_id,
             "gate": self.gate,
             "gate_label": self.gate_label,
             "risk": self.risk,
@@ -372,6 +374,10 @@ class GraphRunner:
             gen_retry=int(values.get("gen_retry") or 0),
         )
 
+    def checkpoint(self):
+        """图外闸口服务读取持久化检查点及 created_at。"""
+        return self.app.get_state(self._cfg)
+
     def values(self) -> dict[str, Any]:
         """当前状态的完整快照（排查用）。"""
         return dict(self.app.get_state(self._cfg).values or {})
@@ -460,6 +466,7 @@ def _pending_interrupt(snapshot: Any) -> PendingGate | None:
                 continue
             gate = str(v.get("gate") or "")
             return PendingGate(
+                checkpoint_id=(getattr(snapshot, "config", None) or {}).get("configurable", {}).get("checkpoint_id", ""),
                 gate=gate,
                 gate_label=str(v.get("gate_label") or S.GATE_LABEL.get(gate, gate)),
                 risk=str(v.get("risk") or S.GATE_RISK.get(gate, "medium")),

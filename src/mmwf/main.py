@@ -40,6 +40,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 import logging
 import socket
 from typing import Any
@@ -94,7 +95,15 @@ def create_app(settings: Settings | None = None) -> Any:
         f"app.host={cfg.app.host!r} 不是回环地址，拒绝启动（C11）"
     )
 
+    @asynccontextmanager
+    async def lifespan(app):
+        from starlette.concurrency import run_in_threadpool
+
+        await run_in_threadpool(app.state.runtime.gate_service().recover_pending_decisions)
+        yield
+
     app = FastAPI(
+        lifespan=lifespan,
         title="mmwf",
         version=cfg.app.version,
         # 三个都关掉：离线环境不需要文档页，且它等于一份"接口说明书"
@@ -377,7 +386,11 @@ def _register_routes(app: Any, cfg: Settings) -> None:
     """
     from mmwf.api.routes import build_router
 
-    app.include_router(build_router(cfg), prefix=API_PREFIX)
+    from mmwf.api.routes._context import Runtime
+
+    rt = Runtime(cfg)
+    app.state.runtime = rt
+    app.include_router(build_router(cfg, runtime=rt), prefix=API_PREFIX)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -81,16 +81,10 @@ class TestResumeDecisionValidate:
             I.ResumeDecision(decision="edit", payload={"foo": 1}).validate(gate="G2")
         assert ei.value.code == "E4001"
 
-    def test_edit_payload_with_extra_unknown_fields_ok(self):
-        """带了一个已知字段 + 若干未知字段是**允许**的（未知的会被过滤）。
-
-        前端常把整个表单回传，里面混着无关字段，为此报错会让用户
-        看到一个莫名其妙的中断。
-        """
-        I.ResumeDecision(
-            decision="edit",
-            payload={"topics": [], "irrelevant": 1},
-        ).validate(gate="G2")
+    def test_edit_payload_with_extra_unknown_fields_raises(self):
+        """T2-03 §2.2 修正旧合同：混合未知键也必须拒绝。"""
+        with pytest.raises(MmwfError):
+            I.ResumeDecision(decision="edit", payload={"topics": [], "irrelevant": 1}).validate(gate="G2")
 
     def test_approve_ignores_payload(self):
         """approve 带 payload 不报错（前端常回传上一次的 payload）。"""
@@ -376,10 +370,9 @@ class TestMakeGateFactory:
 
 class TestMergeEditPayload:
     def test_filters_to_editable_fields(self):
-        got = I._merge_edit_payload(
-            {}, gate="G2", payload={"topics": [], "audio_paths": ["/x"]}
-        )
-        assert got == {"topics": []}
+        """T2-03 §2.2：拒绝非白名单键，不再过滤后继续。"""
+        with pytest.raises(MmwfError):
+            I._merge_edit_payload({}, gate="G2", payload={"topics": [], "audio_paths": ["/x"]})
 
     def test_raises_when_nothing_editable(self):
         with pytest.raises(MmwfError) as ei:
@@ -392,16 +385,9 @@ class TestMergeEditPayload:
             I._merge_edit_payload({}, gate="G2", payload={"transcript": []})
 
     def test_g3_cannot_edit_topics(self):
-        """G3 的 payload 里混进 topics 会被**过滤掉**而不是报错。
-
-        前端把整张表单回传是常态，为此报错会让用户看到一个
-        莫名其妙的中断。但过滤后一个字段都不剩时要报错（见下一条）。
-        """
-        got = I._merge_edit_payload(
-            {}, gate="G3", payload={"minutes_markdown": "# 稿", "topics": []}
-        )
-        assert got == {"minutes_markdown": "# 稿"}
-        assert "topics" not in got
+        """T2-03 §2.2：拒绝非白名单键，不再过滤后继续。"""
+        with pytest.raises(MmwfError):
+            I._merge_edit_payload({}, gate="G3", payload={"minutes_markdown": "# 稿", "topics": []})
 
     def test_g3_with_only_topics_raises(self):
         with pytest.raises(MmwfError) as ei:
@@ -409,10 +395,10 @@ class TestMergeEditPayload:
         assert ei.value.code == "E4001"
 
     def test_g2_cannot_edit_markdown(self):
-        got = I._merge_edit_payload(
-            {}, gate="G2", payload={"minutes_markdown": "# 稿", "resolutions": []}
-        )
-        assert got == {"resolutions": []}
+        """T2-03 §2.2：拒绝非白名单键，不再过滤后继续。"""
+        with pytest.raises(MmwfError):
+            I._merge_edit_payload({}, gate="G2", payload={"minutes_markdown": "# 稿", "resolutions": []})
+
 
 
 class TestApplyDecisionPure:

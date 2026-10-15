@@ -47,7 +47,7 @@ from ._support import (
 )
 
 
-def build_router(cfg: Settings) -> APIRouter:
+def build_router(cfg: Settings, *, runtime: Runtime | None = None) -> APIRouter:
     """构造路由表。`cfg` 用于解析数据目录与库路径。"""
 
     def require_token(
@@ -64,7 +64,7 @@ def build_router(cfg: Settings) -> APIRouter:
 
     #: 整个路由器都要求令牌 —— 见上方 `require_token` 的说明。
     router = APIRouter(dependencies=[Depends(require_token)])
-    rt = Runtime(cfg)
+    rt = runtime or Runtime(cfg)
 
     # 注册顺序：只有 `export` 内部有约束（`export/undo` 必须在
     # `export/{file}` 之前，见 `export.py` 模块 docstring）。

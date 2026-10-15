@@ -172,7 +172,7 @@ class ResumeDecision:
             # 用**该闸口**的可编辑字段判定，不是全局并集 ——
             # G3 只认 `minutes_markdown`，不接受 `topics`。
             known = set(GATE_EDITABLE_FIELDS.get(gate, ()))
-            if not known & set(self.payload or {}):
+            if not isinstance(self.payload, dict) or not known & set(self.payload) or set(self.payload) - known:
                 raise MmwfError(
                     code="E4001",
                     detail=(
@@ -394,7 +394,10 @@ def _apply_decision(state: dict, *, gate: str, node_id: str, raw: Any) -> dict:
 
     if d.decision == "approve":
         logger.info("闸口 %s 通过（operator=%s）", gate, d.operator or "(未署名)")
-        return {GATE_ROUTE_KEY: GATE_ROUTE[gate]["approve"]}
+        out = {GATE_ROUTE_KEY: GATE_ROUTE[gate]["approve"]}
+        if gate == "G2" and "_confirmed_topics" in raw:
+            out["topics"] = raw["_confirmed_topics"]
+        return out
 
     if d.decision == "edit":
         # edit 的语义是"用修改后的 payload 注入状态，**不再重跑上游**"。
@@ -403,6 +406,8 @@ def _apply_decision(state: dict, *, gate: str, node_id: str, raw: Any) -> dict:
         logger.info("闸口 %s 修改后继续：注入 %s（operator=%s）",
                     gate, sorted(merged), d.operator or "(未署名)")
         out = dict(merged)
+        if gate == "G2" and "_confirmed_topics" in raw:
+            out["topics"] = raw["_confirmed_topics"]
         out[GATE_ROUTE_KEY] = GATE_ROUTE[gate]["edit"]
         return out
 
@@ -439,23 +444,15 @@ def _apply_decision(state: dict, *, gate: str, node_id: str, raw: Any) -> dict:
 
 
 def _merge_edit_payload(state: dict, *, gate: str, payload: dict) -> dict:
-    """把 edit 的 payload 合并进状态（**只接受该闸口**允许改的字段）。
-
-    闸口自己该审的那一段之外的字段一律丢弃。丢而不是报错：
-    前端常把整张表单回传，里面混着只读字段，为此报错会让用户
-    看到一个莫名其妙的中断。但**一个该闸口的字段都没带**要报错 ——
-    那等于"点了改完继续却什么都没改"。
-    """
+    """图内防御性校验；未知顶层键按 T2-03 §2.2 拒绝，不静默丢弃。"""
     allowed = set(GATE_EDITABLE_FIELDS.get(gate, ()))
-    merged = {k: v for k, v in payload.items() if k in allowed}
-    if not merged:
-        raise MmwfError(
-            code="E4001",
-            detail=(
-                f"闸口 {gate} 的 edit payload 里没有可修改的字段"
-                f"（允许：{sorted(allowed)}）"
-            ),
-        )
+    if not isinstance(payload, dict) or not payload or set(payload) - allowed:
+        raise MmwfError(code="E4001", detail="编辑包含非白名单字段")
+    merged = dict(payload)
+    for key, value in merged.items():
+        valid = (isinstance(value, list) and all(isinstance(i, dict) for i in value)) if gate == "G2" else (isinstance(value, str) and bool(value.strip()))
+        if not valid:
+            raise MmwfError(code="E4001", detail="编辑字段类型错误")
     return merged
 
 

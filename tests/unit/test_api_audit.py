@@ -485,3 +485,25 @@ class TestAuditExport:
 
     def test_never_500(self, client: TestClient):
         assert client.post(f"{API}/audit/export", json={}).status_code == 200
+
+
+def test_real_gate_summary_search_and_export(gate_env):
+    """C3：真实审批的完整摘要可检索、导出，正文与自由备注不外泄。"""
+    e = gate_env
+    response = e.client.post(e.base + "/gate/G2/decide", json={
+        "checkpoint_id": e.pending["checkpoint_id"], "decision": "edit", "operator": "刘秘书",
+        "payload": {"topics": e.pending["payload"]["topics"]}, "comment": "不进入审计的自由备注",
+    }).json()
+    assert response["ok"], response
+    result = e.client.get(f"{API}/audit/logs", params={"operator": "刘秘书", "action": "gate_decision",
+        "target_id": e.mid, "from_ts": "2020-01-01T00:00:00Z", "to_ts": "2099-01-01T00:00:00Z"}).json()["data"]
+    assert result["returned"] == 1
+    record = result["records"][0]
+    detail = record["detail"]
+    assert detail["changed_keys"] == [] and detail["changed"] == {}
+    assert detail["auto"] is False and detail["comment_present"] is True
+    exported = e.client.post(f"{API}/audit/export", json={}).json()["data"]
+    assert exported["integrity"]["result"] == "pass"
+    found = [r for r in exported["records"] if r["log_id"] == record["log_id"]]
+    assert found[0]["detail"] == detail
+    assert "不进入审计的自由备注" not in str(exported)

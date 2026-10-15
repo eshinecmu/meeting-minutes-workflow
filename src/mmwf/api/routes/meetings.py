@@ -175,6 +175,7 @@ def register(router: APIRouter, rt: Runtime) -> None:
             runner = rt.runner(meeting_id)
             try:
                 status = runner.start()
+                rt.gate_service().observe_pending(meeting_id, runner)
                 return env.ok(status.to_dict(), "已开始处理")
             finally:
                 runner.close()
@@ -201,7 +202,7 @@ def register(router: APIRouter, rt: Runtime) -> None:
         with rt.meeting_lock(meeting_id):
             runner = rt.runner(meeting_id)
             try:
-                data["run"] = runner.status().to_dict()
+                data["run"] = rt.gate_service().observe_pending(meeting_id, runner).to_dict()
             except Exception:  # pragma: no cover - 尚未开跑时状态不可读
                 data["run"] = None
             finally:
@@ -272,48 +273,14 @@ def register(router: APIRouter, rt: Runtime) -> None:
         if gate_name not in GATE_NODE_MAP:
             raise MmwfError(code="E4001", detail=f"未知闸口 {gate!r}")
 
-        decision = (payload.get("decision") or "").strip()
-        if decision not in ALLOWED_DECISIONS:
-            raise MmwfError(code="E4001", detail=f"未知决策 {decision!r}")
-
-        # 算子也要留痕（审计链要求"谁做的决策"）
-        operator = (payload.get("operator") or row.get("recorder") or "unknown").strip()
-
-        with rt.meeting_lock(meeting_id):
-            runner = rt.runner(meeting_id)
-            try:
-                before = runner.run_counts()
-                status = runner.resume(
-                    {
-                        "decision": decision,
-                        "payload": payload.get("payload") or {},
-                        "operator": operator,
-                        "comment": payload.get("comment") or "",
-                    }
-                )
-                after = runner.run_counts()
-            finally:
-                runner.close()
-        # rerun_nodes = 这次决策**额外**触发了哪些节点。
-        # 闸口自身会被 interrupt 重放，不算"重跑"（它对用户不是返工），
-        # 所以排除掉 —— 否则 approve 也会显示"重跑了 gate_g2"，
-        # 用户会以为自己干了什么导致重做。
-        rerun = sorted(
-            k for k, v in after.items()
-            if v > before.get(k, 0) and k not in GATE_NODE_MAP.values()
+        operator = payload.get("operator") or row.get("recorder") or "unknown"
+        result = rt.gate_service().apply_decision(
+            meeting_id, gate_name, payload.get("checkpoint_id"), payload.get("decision"),
+            payload.get("payload"), operator, payload.get("comment", ""),
         )
-        return env.ok(
-            {
-                "resumed": True,
-                "next_state": status.status,
-                "status_label": status.status_label,
-                "rerun_nodes": rerun,
-                "pending_gate": status.pending_gate.to_dict() if status.pending_gate else None,
-            },
-            _decision_message(decision),
-        )
+        return env.ok(result, _decision_message(payload.get("decision")))
 
-    # -- ⑥ 成稿 --------------------------------------------------------
+    # -- ⑥ 成稿 --
 
     @router.get("/meetings/{meeting_id}/minutes")
     def get_minutes(meeting_id: str = PathParam(...)):

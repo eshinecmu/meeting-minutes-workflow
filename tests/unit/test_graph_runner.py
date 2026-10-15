@@ -872,7 +872,7 @@ class TestRunStatusObject:
         d = st.pending_gate.to_dict()
         assert d["gate"] == "G2"
         assert set(d) == {"gate", "gate_label", "risk", "payload",
-                          "evidence", "node_id"}
+                          "evidence", "node_id", "checkpoint_id"}
 
     def test_gate_label_is_user_facing(self, runner):
         """界面文案不得含工程词（N3.3）。"""
