@@ -172,7 +172,9 @@ def segmentize(record_markdown: str) -> tuple[list[Segment], SegmentizeReport]:
         next_start = raw[i + 1][2] if i + 1 < len(raw) else None
         # end_ms 只能**推**：记录稿里没有"本段结束时间"。
         # 用下一段的 start_ms 当本段的 end_ms —— 这是唯一可得的近似，
-        # 会在有长静音时把静音算进本段时长。所以 gap 单独算，别用 end-start。
+        # 卡 §1.3 的公式是 gap = next.start_ms - cur.end_ms；但 Markdown
+        # 没有真实结束时间，若拿上面的近似 end_ms 相减，gap 将恒为零。
+        # 保留原实现的相邻起点间隔作为边界信号；这是有损近似，并非实测静音。
         end_ms = next_start
         gap = (next_start - start_ms) if (next_start is not None
                                           and start_ms is not None) else None

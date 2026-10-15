@@ -1,0 +1,157 @@
+"""T2-01 分块与记录稿反解契约（U-EX-01～05、08、10）。"""
+
+from pathlib import Path
+
+import pytest
+
+from mmwf.domain.extraction.chunker import chunk_segments
+from mmwf.domain.extraction.segmentize import Segment, segmentize
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "transcripts"
+
+
+@pytest.mark.parametrize("boundary", ["speaker", "turn", "silence"])
+def test_semantic_boundary_requires_target(boundary):
+    """U-EX-01～03：先攒够字数，再在语义边界切块。"""
+    segments = [Segment(i, str(i) * 300, speaker="张三") for i in range(1, 8)]
+    if boundary == "speaker":
+        segments[4] = Segment(5, "五" * 300, speaker="李四")
+    elif boundary == "turn":
+        segments[4] = Segment(5, "下面我们看第二个议题" + "五" * 290, speaker="张三")
+    else:
+        segments[4] = Segment(5, "五" * 300, speaker="张三", gap_after_ms=1501)
+    chunks = chunk_segments(segments, overlap_chars=0)
+    assert chunks[0].segments[-1] == segments[4]
+    assert len(chunks[0].segments) == 5
+    assert len(chunks) == 2
+
+
+def test_early_boundaries_do_not_fragment_long_fixture():
+    """坑 1：两万字夹具只产生 10～20 块，不能遇边界就切。"""
+    segments, report = segmentize((FIXTURES / "long_20000.txt").read_text(encoding="utf-8"))
+    chunks = chunk_segments(segments)
+    assert report.no_timecode == 0
+    assert 10 <= len(chunks) <= 20
+    assert all(1000 <= ch.char_count <= 2000 for ch in chunks[:-1])
+    assert chunks[-1].char_count <= 2000
+    assert {s.seq for ch in chunks for s in ch.segments} == {s.seq for s in segments}
+
+
+def test_maximum_without_semantic_boundaries():
+    """U-EX-04：没有语义边界时仍受累计最大块大小约束。"""
+    segments = [Segment(i, "甲" * 300, speaker="张三") for i in range(1, 15)]
+    chunks = chunk_segments(segments)
+    assert len(chunks) >= 3
+    assert all(1000 <= ch.char_count <= 2000 for ch in chunks[:-1])
+    assert chunks[-1].char_count <= 2000
+
+
+@pytest.mark.parametrize("text,first_length", [pytest.param("甲" * 4500, 2000, id="hard"), pytest.param("甲" * 1899 + "。" + "乙" * 2600, 1900, id="punctuation")])
+def test_single_oversize_segment_is_split(text, first_length):
+    """§2.2：单段超长优先句末切分，无标点硬切并标记告警。"""
+    chunks = chunk_segments([Segment(1, text, speaker="张三", start_ms=0, end_ms=9000)], overlap_chars=0)
+    assert len(chunks) == 3
+    assert len(chunks[0].text) == first_length
+    assert all(ch.forced_split for ch in chunks)
+    assert all(ch.char_count <= 2000 for ch in chunks)
+    assert "".join(s.text for ch in chunks for s in ch.segments) == text
+
+
+def test_overlap_is_actual_suffix_of_whole_segments():
+    """U-EX-05、坑 2：重叠是前块末尾的完整段，宁可略超 200 字。"""
+    segments = [Segment(i, str(i) * 120, speaker="张三" if i % 2 else "李四") for i in range(1, 10)]
+    chunks = chunk_segments(segments, target_chars=600)
+    for left, right in zip(chunks, chunks[1:]):
+        count = right.overlap_lead
+        assert count > 0
+        assert right.segments[:count] == left.segments[-count:]
+        assert 200 <= sum(s.char_count for s in right.segments[:count]) < 320
+        assert right.segments[count:]
+
+
+@pytest.mark.parametrize("gap,expected", [(1500, 1), (1501, 2)])
+def test_silence_threshold_is_strict(gap, expected):
+    """U-EX-03：1500 毫秒不触发，超过才触发。"""
+    segments = [Segment(1, "甲" * 1500, gap_after_ms=gap), Segment(2, "乙" * 100)]
+    assert len(chunk_segments(segments, overlap_chars=0)) == expected
+
+
+def test_segmentize_timecodes_gaps_and_loss_report():
+    """D1：保留相邻时间码间隔信号，缺时间码如实计数。"""
+    segments, report = segmentize("# 记录稿\n[01:02] 张三：甲\n[00:01:05] 李四: 乙\n王五：丙")
+    assert [s.text for s in segments] == ["甲", "乙", "丙"]
+    assert [s.start_ms for s in segments] == [62000, 65000, None]
+    assert [s.speaker for s in segments] == ["张三", "李四", "王五"]
+    assert [s.gap_after_ms for s in segments] == [3000, None, None]
+    assert (report.total, report.with_timecode, report.no_timecode) == (3, 2, 1)
+
+
+def test_empty_segments():
+    """U-EX-10：空文本与空段列表均返回空结果。"""
+    assert chunk_segments([]) == []
+    segments, report = segmentize("\n# 空记录\n")
+    assert segments == []
+    assert report.total == 0
+
+
+def test_turn_word_outside_head_does_not_split():
+    """U-EX-02：转折词只在段首十字内有效，正文提及不算转折。"""
+    segments = [Segment(1, "甲" * 1500), Segment(2, "乙" * 11 + "下面继续讨论")]
+    assert len(chunk_segments(segments, overlap_chars=0)) == 1
+
+
+def test_chunk_settings_control_pipeline():
+    """U-EX-08：实际配置中的分块目标和重叠长度贯通抽取入口。"""
+    import json
+    from types import SimpleNamespace
+
+    from mmwf.adapters.llm.fake_client import FakeLlmClient
+    from mmwf.domain.extraction.extractor import extract_minutes
+    from mmwf.settings import ExtractionConfig
+
+    text = "\n".join(f"[00:{i:02d}] {'张三' if i % 2 else '李四'}：" + "甲" * 300 for i in range(8))
+    counts = []
+    for target in (600, 1500):
+        settings = SimpleNamespace(extraction=ExtractionConfig(chunk={"target_chars": target, "overlap_chars": 0}))
+        data = {"title": "纪要", "meeting_time": "", "location": "", "host": "", "attendees": [], "recorder": "", "topics": []}
+        llm = FakeLlmClient(script=[json.dumps(data)])
+        result = extract_minutes(text, llm=llm, settings=settings, max_workers=1)
+        assert len(llm.calls) == result.stats["chunks"]
+        counts.append(result.stats["chunks"])
+    assert counts == [4, 2]
+
+
+@pytest.mark.parametrize("next_time,expected_gap,expected_chunks", [("03", 3000, 2), ("01", 1000, 1)])
+def test_record_timecode_gap_triggers_silence_end_to_end(
+    next_time, expected_gap, expected_chunks,
+):
+    """U-EX-03：真实记录稿反解后，只有长时间间隔触发静音分块。"""
+    from mmwf.adapters.llm.fake_client import FakeLlmClient
+    from mmwf.domain.extraction.extractor import extract_minutes
+
+    # 同一说话人、无转折词、总字数未达最大值，排除其他切块原因。
+    text = (
+        "[00:00] 张三：" + "甲" * 1500
+        + f"\n[00:{next_time}] 张三：乙\n[00:{int(next_time) + 1:02d}] 张三：丙"
+    )
+    segments, _ = segmentize(text)
+    assert [s.gap_after_ms for s in segments] == [
+        expected_gap, 1000, None,
+    ]
+    chunks = chunk_segments(segments, overlap_chars=0)
+    assert len(chunks) == expected_chunks
+    if expected_chunks == 2:
+        assert chunks[0].segments == (segments[0],)
+        assert chunks[1].segments == tuple(segments[1:])
+
+    llm = FakeLlmClient(script=[
+        '{"title":"纪要","meeting_time":"","location":"","host":"",'
+        '"attendees":[],"recorder":"","topics":[]}'
+    ])
+    result = extract_minutes(text, llm=llm, overlap_chars=0, max_workers=1)
+    assert result.stats["chunks_ok"] == expected_chunks
+    assert len(llm.calls) == expected_chunks
+    if expected_chunks == 2:
+        assert "甲" * 1500 in llm.calls[0]["prompt"]
+        assert "乙" not in llm.calls[0]["prompt"]
+        assert "甲" not in llm.calls[1]["prompt"]

@@ -459,6 +459,14 @@ def _resolve_cfg(settings: Any, target_chars: int | None,
     chunk = getattr(ex, "chunk", None)
     merge = getattr(ex, "merge", None)
     retry = getattr(ex, "retry", None)
+    configured_retries = getattr(retry, "max_schema_retries", 2)
+    schema_retries = min(2, max(0, configured_retries))
+    if schema_retries != configured_retries:
+        logger.warning(
+            "extraction.retry.max_schema_retries=%s 超出 0～2 范围，采用 %s"
+            "（施工卡 §4 验收 9、SAD §10.2：最多重试 2 次）",
+            configured_retries, schema_retries,
+        )
     return {
         "target_chars": (target_chars if target_chars is not None
                          else getattr(chunk, "target_chars", 1500)),
@@ -467,5 +475,6 @@ def _resolve_cfg(settings: Any, target_chars: int | None,
                           else getattr(chunk, "overlap_chars", 200)),
         "topic_threshold": getattr(merge, "topic_similarity_threshold", 0.82),
         "dedup_threshold": getattr(merge, "resolution_dedup_threshold", 0.90),
-        "max_schema_retries": getattr(retry, "max_schema_retries", 2),
+        # 施工卡规定最多重试两次，配置只能收紧这个上限。
+        "max_schema_retries": schema_retries,
     }

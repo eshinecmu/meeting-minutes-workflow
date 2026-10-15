@@ -22,7 +22,9 @@ SAD §10.2 原文写的是 `source_start_ms: int`（**必填 int**）。本卡**
 * 编出来的 `start_ms` 更坏：它会让溯源**指到一个错误的位置**，
   比"没有时间戳"危险得多（用户点溯源跳过去，看到的是别的内容）。
 
-所以这里类型放宽为 `int | None = None`，并在 JSON Schema 里允许 `null`。
+所以这里类型放宽为 `int | None`（键仍必填），并在 JSON Schema 里允许 `null`。
+必填键依据施工卡 §2.3、SAD §10.2 的 `source_start_ms: int` /
+`source_end_ms: int` 无默认值定义；D1 只解释缺时间码时值可空，不取消键。
 **字段名与 SAD 一致**（`source_start_ms` / `source_end_ms`），只放宽可空性 ——
 将来上游若明确要求必填，改这一处即可。
 
@@ -41,7 +43,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -76,10 +78,17 @@ class _Grounded(BaseModel):
     owner: str = Field(default="暂无", description="责任人；无则填『暂无』")
     deadline: str | None = Field(default=None, description="时限，无则 null")
     #: ★ 必须**逐字摘自**原文（SAD §10.2 严格要求 2）。
-    source_quote: str = Field(default="", description="原文片段，须逐字摘自转写稿")
+    # 卡 §2.3、SAD §10.2 明写 Field(...)，不能用默认空串掩盖漏字段。
+    source_quote: str = Field(..., description="原文片段，须逐字摘自转写稿")
     #: 见裁决 D2：可空，因为记录稿可能没有时间码。
-    source_start_ms: int | None = None
-    source_end_ms: int | None = None
+    source_start_ms: int | None = Field(...)
+    source_end_ms: int | None = Field(...)
+
+    @field_validator("owner")
+    @classmethod
+    def _owner_placeholder(cls, value: str) -> str:
+        """责任人空白时显式填占位值（SAD §10.4 规则 1）。"""
+        return value if value.strip() else "暂无"
 
     model_config = {"extra": "ignore"}
 
@@ -110,7 +119,8 @@ class TopicSchema(BaseModel):
     """议题（SAD §10.2 原文定义）。"""
 
     name: str = Field(..., max_length=30)
-    discussion: str = Field(default="")
+    # 卡 §2.3、SAD §10.2 的无默认值字段保持必填。
+    discussion: str
     readings: list[str] = Field(default_factory=list)   # 公文语体标签（T2-02）
     resolutions: list[ResolutionSchema] = Field(default_factory=list)
     action_items: list[ActionItemSchema] = Field(default_factory=list)
@@ -122,13 +132,14 @@ class TopicSchema(BaseModel):
 class MinutesSchema(BaseModel):
     """纪要结构（SAD §10.2 原文定义）。"""
 
-    title: str = Field(default="")
-    meeting_time: str = Field(default="")
-    location: str = Field(default="")
-    host: str = Field(default="")
-    attendees: list[str] = Field(default_factory=list)
-    recorder: str = Field(default="")
-    topics: list[TopicSchema] = Field(default_factory=list)
+    # 卡 §2.3、SAD §10.2 的七个顶层字段均无默认值；未知值由模型显式给空。
+    title: str
+    meeting_time: str
+    location: str
+    host: str
+    attendees: list[str]
+    recorder: str
+    topics: list[TopicSchema]
     schema_version: Literal["1.0"] = "1.0"
 
     model_config = {"extra": "ignore"}

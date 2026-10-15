@@ -116,7 +116,7 @@ class _Buf:
             return _Buf()
         taken: list[Segment] = []
         total = 0
-        for seg in reversed(self.segments[:-1]):   # 至少留 1 段给上一块
+        for seg in reversed(self.segments[1:]):   # 至少留 1 段给上一块
             taken.append(seg)
             total += seg.char_count
             if total >= overlap_chars:
@@ -235,26 +235,38 @@ def chunk_segments(
     overlap_lead = 0
     prev: Segment | None = None
 
+    def emit() -> None:
+        """输出当前块，并携带按段对齐的尾部重叠。"""
+        nonlocal buf, overlap_lead
+        chunks.append(Chunk(
+            index=len(chunks) + 1,
+            segments=tuple(buf.segments),
+            text=_render(buf.segments),
+            char_count=buf.chars,
+            overlap_lead=overlap_lead,
+            forced_split=_was_forced(buf.segments),
+        ))
+        buf = buf.tail_overlap(overlap_chars)
+        overlap_lead = len(buf.segments)
+
     for seg in expanded:
+        # 无语义边界时也不能突破硬上限；超长单段的碎片不能重新拼回去。
+        if buf.segments and buf.chars + seg.char_count > max_chars:
+            if len(buf.segments) > overlap_lead:
+                emit()
+            # 完整重叠段与新段放不下时，优先保住新内容和大小上限。
+            while buf.segments and buf.chars + seg.char_count > max_chars:
+                buf.chars -= buf.segments.pop(0).char_count
+            overlap_lead = len(buf.segments)
         buf.add(seg)
         boundary = _is_boundary(prev, seg, long_silence_ms=long_silence_ms)
         prev = seg
 
         # ★ 这就是那个 AND —— 攒够字数 **且** 遇到语义边界，才切。
-        if buf.chars >= target_chars and boundary:
-            chunks.append(Chunk(
-                index=len(chunks) + 1,
-                segments=tuple(buf.segments),
-                text=_render(buf.segments),
-                char_count=buf.chars,
-                overlap_lead=overlap_lead,
-                forced_split=_was_forced(buf.segments),
-            ))
-            carry = buf.tail_overlap(overlap_chars)
-            buf = carry
-            overlap_lead = len(carry.segments)
+        if (buf.chars >= target_chars and boundary) or buf.chars >= max_chars:
+            emit()
 
-    if buf.segments:
+    if len(buf.segments) > overlap_lead:
         chunks.append(Chunk(
             index=len(chunks) + 1,
             segments=tuple(buf.segments),
