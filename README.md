@@ -207,6 +207,8 @@ pytest tests/contract -q -m real_model
 
 ## 文档索引
 
+- [程序使用说明（操作人员与安装维护人员）](docs/使用说明.md)
+
 ### 设计文档（`docs/设计文档/`）
 
 | # | 文档 | 解决的问题 |
