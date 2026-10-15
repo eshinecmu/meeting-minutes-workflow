@@ -134,21 +134,37 @@ class MinutesService:
     def require_final(self, meeting_id, filename):
         import re
         from pathlib import Path
-        matched = re.fullmatch(re.escape(meeting_id) + r'-纪要-v(\d+)\.(?:docx|doc)', Path(filename).name)
+        matched = re.fullmatch(re.escape(meeting_id) + r'-纪要-v(\d+)\.(?:docx|doc|pdf)', Path(filename).name)
         row = self.store().get(meeting_id, int(matched[1])) if matched else None
         if not row or not row['is_final']:
             raise MmwfError(code='E4001', detail='该文件没有审定后的纪要配对版本')
+        if Path(filename).suffix == '.pdf':
+            from .export import make_export_service
+            make_export_service(meeting_id, self.cfg).require_pdf_source(
+                'export/' + Path(filename).name, row)
         return row
 
 
 def http_export(runtime, meeting_id, payload):
     """HTTP 默认类型以工作流存在为准；失败纪要不降级记录稿。"""
+    fmt = payload.get('format', 'docx')
+    if not isinstance(fmt, str) or fmt not in {'docx', 'pdf'}:
+        raise MmwfError(code='E1001', detail='format 必须为 docx 或 pdf')
+    if fmt == 'pdf':
+        convert_doc = payload.get('convert_doc', False)
+        if type(convert_doc) is not bool or convert_doc or payload.get('artifact') not in (None, 'minutes'):
+            raise MmwfError(code='E1001', detail='PDF 仅支持纪要，且不能同时请求 DOC')
+        version = payload.get('version')
+        if version is not None and (type(version) is not int or version < 1):
+            raise MmwfError(code='E1001', detail='version 必须为正整数')
     with runtime.meeting_lock(meeting_id), runtime.runner(meeting_id) as runner:
         state = runner.values()
         artifact = payload.get('artifact')
         workflow = bool(state or MinutesService(runtime.cfg).store().get(meeting_id))  # 会议一旦有检查点，就沿纪要交付合同。
         if artifact is None:
             artifact = 'minutes' if workflow else 'record'
+        if fmt == 'pdf' and artifact != 'minutes':
+            raise MmwfError(code='E1001', detail='记录稿不能导出 PDF')
         status = runner.status()
         approved = False
         if artifact == 'minutes':
@@ -159,8 +175,10 @@ def http_export(runtime, meeting_id, payload):
             approved = (status.pending_gate is None and final is not None and bool(final['is_final'])
                 and final['note']['pair_fingerprint'] == service.version_note({**state, **candidate})['pair_fingerprint']
                 and (status.status == 'archived' or bool({'export', 'archive'} & set(runner.checkpoint().next))))
-        return runtime.export_service(meeting_id).export_docx(
-            version=payload.get('version'), convert_doc=payload.get('convert_doc'),
+        exporter = runtime.export_service(meeting_id)
+        export = exporter.export_pdf if fmt == 'pdf' else exporter.export_docx
+        return export(
+            version=payload.get('version'), convert_doc=payload.get('convert_doc', False) if fmt == 'pdf' else payload.get('convert_doc'),
             artifact=artifact, minutes_state=state, approved=approved)
 
 
@@ -172,7 +190,7 @@ def check_download(runtime, meeting_id, filename):
         return
     with runtime.meeting_lock(meeting_id), runtime.runner(meeting_id) as runner:
         state = runner.values()
-        if not state and '-纪要-v' not in filename:
+        if not state and '-纪要-v' not in filename and not filename.lower().endswith('.pdf'):
             return  # 一期独立记录稿导出兼容。
         service = MinutesService(runtime.cfg)
         service.validate(meeting_id, state)

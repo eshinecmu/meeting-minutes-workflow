@@ -60,6 +60,8 @@ from __future__ import annotations
 import errno
 import hashlib
 import logging
+import tempfile
+import threading
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -77,8 +79,9 @@ from mmwf.domain.docx import (
 )
 from mmwf.domain.docx.writer import FontMissingError
 from mmwf.domain.errors import MmwfError
+from mmwf.infra.crypto import CryptoError
 from mmwf.infra.audit import AuditLogger
-from mmwf.infra.filestore import FileStore, StoredFile
+from mmwf.infra.filestore import FileStore, FileStoreError, StoredFile
 from mmwf.infra.db import connect_ctx
 
 logger = logging.getLogger(__name__)
@@ -102,6 +105,17 @@ DOC_STATUS_FAILED = "failed"
 
 #: 默认字体策略（config/models.yaml `font_fallback_policy`）。
 DEFAULT_FONT_POLICY = "warn"
+PDF_REGISTRY = "archive/pdf-exports.json"
+ARCHIVE_MANIFEST = "archive/manifest.json"
+_PDF_LOCKS: dict[str, threading.RLock] = {}
+_PDF_LOCKS_GUARD = threading.Lock()
+
+
+def delivery_lock(store: FileStore) -> threading.RLock:
+    """同会直接服务、下载、归档和撤销共用的可重入锁。"""
+    with _PDF_LOCKS_GUARD:
+        return _PDF_LOCKS.setdefault(str(store.store_root.resolve()), threading.RLock())
+
 
 
 class ExportServiceError(MmwfError):
@@ -181,6 +195,10 @@ class ExportResult:
     font_report: object | None = None
     doc_conversion: DocConversion = field(default_factory=DocConversion)
 
+    format: str = "docx"
+    source_docx: dict | None = None
+    pdf_conversion: DocConversion | None = None
+
     @property
     def filename(self) -> str:
         return Path(self.rel_path).name
@@ -196,7 +214,7 @@ class ExportResult:
         return ("E5002",) if self.font_warnings else ()
 
     def to_dict(self) -> dict:
-        return {
+        result = {
             "meeting_id": self.meeting_id,
             "version": self.version,
             "path": self.rel_path,
@@ -210,6 +228,11 @@ class ExportResult:
             "warning_codes": list(self.warning_codes),
             "doc": self.doc_conversion.to_dict(),
         }
+
+        if self.format == "pdf":
+            result.update(format="pdf", source_docx=self.source_docx,
+                          pdf=self.pdf_conversion.to_dict() if self.pdf_conversion else None)
+        return result
 
     def summary(self) -> str:
         state = "复用已有文件" if self.reused else "新生成"
@@ -396,7 +419,7 @@ class ExportService:
         rel_path = f"{EXPORT_AREA}/{EXPORT_NAME_TEMPLATE.format(meeting_id=self.store.meeting_id, artifact_label=label, version=version)}"
 
         # --- 幂等：同名且明文哈希一致 -> 复用，不重复登记 ---
-        reused = self._existing_plain_sha(rel_path) == hashlib.sha256(payload).hexdigest()
+        reused = self._valid_file(rel_path, hashlib.sha256(payload).hexdigest())
         if reused:
             stored = self._stored_of(rel_path)
         else:
@@ -440,57 +463,261 @@ class ExportService:
 
     # --- .doc 转换（可选，独立进程） ------------------------------------
 
-    def convert_to_doc(self, docx_rel_path: str) -> DocConversion:
-        """用 LibreOffice 无头模式把 docx 转成 doc。
-
-        **必须独立进程**（GPL 隔离，SAD §6）：我们只是调用它，
-        不链接、不修改、不随包分发 —— 这样本项目的许可不被 GPL 传染。
-
-        `soffice` 不存在时返回 `skipped` 而不是抛错：一期 `.doc` 是
-        可选兼容格式，"目标机没装 LibreOffice"是一个完全正常的
-        部署形态（部署手册 §2.1 的清单里就没把 LO 列为必需项）。
-        """
+    def _convert_with_soffice(self, docx_rel_path: str, target: str) -> DocConversion:
+        """内部进程接缝；PDF 使用会议明文区内的独立工作目录。"""
         soffice = self.soffice_path or shutil.which("soffice")
         if not soffice or not Path(soffice).exists():
-            return DocConversion(
-                status=DOC_STATUS_SKIPPED,
-                reason="未找到 soffice（LibreOffice）。.doc 为可选格式，docx 已正常导出。",
-            )
-
-        docx_abs = self.store.resolve(docx_rel_path)
-        if not docx_abs.exists():
-            return DocConversion(status=DOC_STATUS_FAILED, reason=f"源文件不存在：{docx_rel_path}")
-
-        # 输出到 store 的 export 目录（明文区）。转换在**同一个目录**里做，
-        # 免得 LO 把结果丢到某个系统临时目录后我们再猜它在哪。
-        out_dir = docx_abs.parent
+            return DocConversion(status="skipped", reason="未找到 soffice（LibreOffice），请安装或配置后重试。")
+        source = self.store.resolve(docx_rel_path)
+        if not source.exists():
+            return DocConversion(status="failed", reason="源 DOCX 不存在")
+        work = None
         try:
+            out_dir = source.parent
+            if target == "pdf":
+                work = tempfile.TemporaryDirectory(prefix=".pdf-", dir=out_dir)
+                out_dir = Path(work.name)
+                data = source.read_bytes()
+                copied = out_dir / source.name
+                copied.write_bytes(data)
+                if hashlib.sha256(copied.read_bytes()).digest() != hashlib.sha256(data).digest():
+                    return DocConversion(status="failed", reason="转换输入复制校验失败")
+                source = copied
             proc = subprocess.run(
-                [soffice, "--headless", "--convert-to", "doc",
-                 "--outdir", str(out_dir), str(docx_abs)],
+                [soffice, "--headless", "--convert-to", target,
+                 "--outdir", str(out_dir), str(source)],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=180,
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return DocConversion(status=DOC_STATUS_FAILED, reason=f"调用 soffice 失败：{exc}")
+            produced = out_dir / (source.stem + "." + target)
+            if proc.returncode != 0 or not produced.is_file():
+                return DocConversion(status="failed", reason=f"soffice 返回 {proc.returncode}，转换未完成")
+            payload = produced.read_bytes()
+            if target == "pdf" and not payload.startswith(b"%PDF-"):
+                return DocConversion(status="failed", reason="转换输出为空或不是 PDF")
+            rel = str(Path(docx_rel_path).with_suffix("." + target))
+            self._write_export(rel, payload)
+            return DocConversion(status="ok", rel_path=rel)
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+                raise
+            return DocConversion(status="failed", reason="调用 soffice 失败：" + type(exc).__name__)
+        finally:
+            if work is not None:
+                work.cleanup()
 
-        produced = out_dir / (docx_abs.stem + DOC_SUFFIX)
-        if proc.returncode != 0 or not produced.exists():
-            tail = (proc.stderr or proc.stdout or "").strip().splitlines()
-            return DocConversion(
-                status=DOC_STATUS_FAILED,
-                reason=f"soffice 返回 {proc.returncode}：{tail[-1] if tail else '无输出'}",
-            )
+    def convert_to_doc(self, docx_rel_path: str) -> DocConversion:
+        """保留一期可选 DOC 的 skipped/failed 软失败合同。"""
+        return self._convert_with_soffice(docx_rel_path, "doc")
 
-        # 手动登记进 manifest（LO 自己不会写我们的 manifest）
-        rel = f"{EXPORT_AREA}/{produced.name}"
-        data = produced.read_bytes()
-        self._write_export(rel, data)
-        return DocConversion(status=DOC_STATUS_OK, rel_path=rel)
+    def convert_to_pdf(self, docx_rel_path: str) -> DocConversion:
+        """内部转换接缝；交付必须通过 export_pdf 的审定与来源检查。"""
+        return self._convert_with_soffice(docx_rel_path, "pdf")
+
+    def export_pdf(self, version: int | None = None, *, artifact: str = "minutes",
+                   minutes_state: dict | None = None, approved: bool = False,
+                   minutes_snapshot: dict | None = None, installed_fonts: set[str] | None = None,
+                   convert_doc: bool = False) -> ExportResult:
+        """仅交付审定纪要；当前稿硬检、字体策略均先于派生缓存。"""
+        if artifact != "minutes" or type(convert_doc) is not bool or convert_doc:
+            raise MmwfError(code="E1001", detail="PDF 仅支持纪要，且不能同时请求 DOC")
+        if version is not None and (type(version) is not int or version < 1):
+            raise MmwfError(code='E1001', detail='version 必须为正整数')
+        with delivery_lock(self.store):
+            try:
+                if not hasattr(self, "minutes_service") or minutes_state is None:
+                    raise MmwfError(code="E4001", detail="纪要交付缺少校验上下文")
+                snapshot = self.minutes_service.deliver(self.store.meeting_id, minutes_state,
+                    approved=approved, version=version, created_by=self.operator)
+                if minutes_snapshot is not None and minutes_snapshot != snapshot:
+                    raise MmwfError(code="E4001", detail="待导出的纪要配对快照已变化")
+                source = self.export_docx(snapshot['version_no'], artifact="minutes",
+                    minutes_state=minutes_state, minutes_snapshot=snapshot, approved=approved,
+                    installed_fonts=installed_fonts, convert_doc=False, write_audit=False)
+                version = source.version
+                rel = str(Path(source.rel_path).with_suffix('.pdf'))
+                binding = dict(version=version, pair_fingerprint=snapshot['note']['pair_fingerprint'],
+                    source_docx_path=source.rel_path, source_docx_sha256=source.sha256)
+                from mmwf.graph.idempotency import IdempotencyStore, make_idempotency_key
+                key = make_idempotency_key(self.store.meeting_id, 'export', {
+                    'meeting_id': self.store.meeting_id, 'artifact': 'minutes', 'version': version,
+                    'pair_fingerprint': binding['pair_fingerprint'],
+                    'source_docx_sha256': source.sha256, 'format': 'pdf'})
+                entries = self.pdf_entries()
+                entry = entries.get(rel)
+                archived = minutes_state.get('stage') == 'archived' or self.current_meeting_status() == 'archived'
+                archive = self._archive_for_pdf(archived)
+                if archived and archive['export_paths'].get('docx') != source.rel_path:
+                    raise MmwfError(code="E4001", detail="PDF 与归档纪要版本不一致")
+                reused = bool(source.reused and isinstance(entry, dict) and entry and all(entry.get(k) == v for k, v in binding.items())
+                    and self._valid_pdf_entry(rel, entry)
+                    and (not archived or (archive.get('export_paths') or {}).get('pdf', {}).get(rel) == entry))
+                if not reused:
+                    conv = self.convert_to_pdf(source.rel_path)
+                    if not conv.ok:
+                        raise MmwfError(code="E5003", detail=conv.reason,
+                            user_message=("未生成 PDF：请安装或配置既有 LibreOffice 后重试。"
+                                          if conv.status == 'skipped' else "PDF 转换失败，请重试或联系技术人员。"))
+                    if not self._valid_file(source.rel_path, source.sha256):
+                        raise MmwfError(code='E5003', detail='转换期间同源 DOCX 已变化，请重试')
+                    stored = self._stored_of(rel)
+                    entry = {**binding, 'pdf_sha256': stored.sha256, 'size_bytes': stored.size_bytes}
+                    entries[rel] = entry
+                    self._write_pdf_entries(entries)
+                    if archived:
+                        paths = dict(archive.get('export_paths') or {})
+                        paths['pdf'] = {**self.valid_pdf_entries(source.rel_path), rel: entry}
+                        paths['artifact_sha256'] = self.artifact_hashes(paths)
+                        archive['export_paths'] = paths
+                        self._write_json(ARCHIVE_MANIFEST, archive)
+                stored = self._stored_of(rel)
+                IdempotencyStore(self.db_path).put(key, self.store.meeting_id, 'export', rel)
+                result = ExportResult(self.store.meeting_id, version, rel, stored.sha256,
+                    stored.size_bytes, False, key, reused=reused, warnings=source.warnings,
+                    font_report=source.font_report, format='pdf',
+                    source_docx={'path': source.rel_path, 'sha256': source.sha256},
+                    pdf_conversion=DocConversion(status='ok', rel_path=rel),
+                    doc_conversion=DocConversion(reason='本请求未要求 DOC'))
+                self._audit_export(version, rel, 'success', extra={'format': 'pdf', 'sha256': stored.sha256,
+                    'source_sha256': source.sha256, 'reused': reused, 'archive_supplement': archived})
+                return result
+            except (MmwfError, OSError, FileStoreError, CryptoError) as exc:
+                self._audit_export(version or 0, None, 'failure', extra={
+                    'format': 'pdf', 'reason': getattr(exc, 'code', type(exc).__name__)})
+                if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+                    raise MmwfError(code='E9002', detail='PDF 导出存储空间不足') from exc
+                if isinstance(exc, (FileStoreError, CryptoError)):
+                    raise MmwfError(code='E5003', detail='PDF 存储或登记失败') from exc
+                raise
+
+    def _write_json(self, rel: str, value: dict) -> None:
+        """内部登记也沿统一写入错误语义，满盘交上层处理。"""
+        try:
+            self.store.write_json(rel, value, stage="archive")
+        except PermissionError as exc:
+            raise MmwfError(code="E5004", detail="PDF 登记文件无法写入") from exc
+        except OSError as exc:
+            if exc.errno == errno.ENOSPC:
+                raise
+            raise MmwfError(code="E5003", detail="PDF 登记写入失败") from exc
+        except (FileStoreError, CryptoError) as exc:
+            raise MmwfError(code="E5003", detail="PDF 登记写入失败") from exc
+
+    def pdf_entries(self) -> dict:
+        if not self.store.exists(PDF_REGISTRY):
+            return {}
+        try:
+            payload = self.store.read(PDF_REGISTRY)
+            if hashlib.sha256(payload).hexdigest() != self._existing_plain_sha(PDF_REGISTRY):
+                return {}
+            import json
+            data = json.loads(payload)
+            if (isinstance(data, dict) and data['format_version'] == 1 and data['meeting_id'] == self.store.meeting_id
+                    and isinstance(data['entries'], dict)):
+                return data['entries']
+        except (ValueError, KeyError, TypeError, OSError, MmwfError, FileStoreError, CryptoError):
+            pass
+        return {}  # 损坏登记不作为缓存证据；重试须重新转换并登记。
+
+    def _write_pdf_entries(self, entries: dict) -> None:
+        self._write_json(PDF_REGISTRY, {'format_version': 1,
+            'meeting_id': self.store.meeting_id, 'entries': entries})
+
+    def _archive_for_pdf(self, archived: bool) -> dict:
+        if not archived:
+            return {}
+        try:
+            import json
+            payload = self.store.read(ARCHIVE_MANIFEST)
+            data = json.loads(payload)
+            paths = data['export_paths']
+            if (data['meeting_id'] == self.store.meeting_id and data.get('archived_at')
+                    and isinstance(paths, dict) and isinstance(paths.get('pdf', {}), dict)
+                    and hashlib.sha256(payload).hexdigest() == self._existing_plain_sha(ARCHIVE_MANIFEST)):
+                return data
+        except (OSError, ValueError, KeyError, TypeError, MmwfError, FileStoreError, CryptoError):
+            pass
+        raise MmwfError(code="E5003", detail="已归档会议缺少有效归档清单",
+                        user_message="PDF 留档未完成：请恢复该会议的归档清单后重试。")
+
+    def artifact_hashes(self, paths: dict) -> dict:
+        """归档集合使用实际路径/明文哈希，PDF 绑定另在 pdf 映射中参与键。"""
+        hashes = {}
+        for rel in [paths.get('docx'), (paths.get('doc') or {}).get('rel_path'), *(paths.get('pdf') or {})]:
+            if rel:
+                if not self.store.exists(rel):
+                    raise MmwfError(code='E1002', detail='归档产物缺失')
+                hashes[rel] = hashlib.sha256(self.store.read(rel)).hexdigest()
+        return dict(sorted(hashes.items()))
+
+    def _valid_file(self, rel: str, sha: str, *, pdf: bool = False, size: int | None = None) -> bool:
+        try:
+            data = self.store.read(rel)
+            entry = next((e for e in self.store.manifest() if e.path == rel), None)
+            return (entry is not None and not entry.encrypted and entry.size_bytes == len(data)
+                and entry.sha256 == sha and bool(data) and (not pdf or data.startswith(b'%PDF-'))
+                and (size is None or len(data) == size)
+                and hashlib.sha256(data).hexdigest() == sha and self._existing_plain_sha(rel) == sha)
+        except (OSError, MmwfError, FileStoreError, CryptoError):
+            return False
+
+    def _valid_pdf_entry(self, rel: str, entry: dict) -> bool:
+        if not isinstance(entry, dict):
+            return False
+        try:
+            expected = f"export/{self.store.meeting_id}-纪要-v{entry['version']}"
+            return (rel == expected + '.pdf' and entry['source_docx_path'] == expected + '.docx'
+                and self._valid_file(rel, entry['pdf_sha256'], pdf=True, size=entry['size_bytes'])
+                and self._valid_file(entry['source_docx_path'], entry['source_docx_sha256']))
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def require_pdf_source(self, rel: str, final: dict) -> dict:
+        entry = self.pdf_entries().get(rel)
+        if not entry or not isinstance(entry, dict) or entry.get('version') != final['version_no'] or entry.get('pair_fingerprint') != final['note']['pair_fingerprint']:
+            raise MmwfError(code="E4001", detail="PDF 没有匹配的审定来源登记")
+        if not self._valid_pdf_entry(rel, entry):
+            raise MmwfError(code="E1002", detail="PDF 或同源 DOCX 缺失、损坏或未登记")
+        return entry
+
+    def valid_pdf_entries(self, docx: str) -> dict:
+        """归档前核对 final、来源及实际字节，清理失效来源登记。"""
+        entries = self.pdf_entries()
+        valid = {}
+        retained = {}
+        for rel, entry in entries.items():
+            try:
+                final = self.minutes_service.require_final(self.store.meeting_id, rel)
+                self.require_pdf_source(rel, final)
+            except MmwfError:
+                continue
+            retained[rel] = entry
+            if entry['source_docx_path'] == docx:
+                valid[rel] = entry
+        if entries != retained:
+            self._write_pdf_entries(retained)
+        return valid
 
     # --- 撤销导出（F5.8） -----------------------------------------------
 
     def undo_export(self, rel_path: str) -> bool:
+        with delivery_lock(self.store):
+            try:
+                return self._undo_export(rel_path)
+            except (MmwfError, OSError, FileStoreError, CryptoError) as exc:
+                if not rel_path.endswith('.pdf'):
+                    raise
+                self._audit_export(0, rel_path, 'failure', extra={
+                    'format': 'pdf', 'reason': getattr(exc, 'code', type(exc).__name__), 'undo': True})
+                if isinstance(exc, MmwfError):
+                    raise
+                if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+                    code = 'E9002'
+                else:
+                    code = 'E5004' if isinstance(exc, PermissionError) else 'E5003'
+                raise MmwfError(code=code, detail='PDF 撤销未完成，请重试') from exc
+
+    def _undo_export(self, rel_path: str) -> bool:
         """撤销一次导出（删除产物 + 留痕）。
 
         这是 F5.8"可撤销"的落点。删文件本身由 `store.delete()`
@@ -500,7 +727,23 @@ class ExportService:
             raise ExportServiceError(
                 f"只能撤销 {EXPORT_AREA}/ 下的文件，收到：{rel_path}"
             )
+        if Path(rel_path).parent != Path(EXPORT_AREA) or "\\" in rel_path:
+            raise MmwfError(code="E1001", detail="非法导出路径")
         existed = self.store.exists(rel_path)
+        if rel_path.endswith('.pdf'):
+            entries = self.pdf_entries()
+            existed = existed or rel_path in entries
+            entries.pop(rel_path, None)
+            # 先清理归档再清来源；任一步失败都不返回完整撤销。
+            if self.store.exists(ARCHIVE_MANIFEST):
+                archive = self._archive_for_pdf(True)
+                paths = archive['export_paths']
+                pdfs = paths.get('pdf', {})
+                existed = existed or rel_path in pdfs
+                pdfs.pop(rel_path, None)
+                paths['artifact_sha256'] = self.artifact_hashes(paths)
+                self._write_json(ARCHIVE_MANIFEST, archive)
+            self._write_pdf_entries(entries)
         if existed:
             self.store.delete(rel_path)
         self.audit.export_event(

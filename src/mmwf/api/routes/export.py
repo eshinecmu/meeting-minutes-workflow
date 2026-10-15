@@ -68,8 +68,7 @@ def register(router: APIRouter, rt: Runtime) -> None:
     def undo_export(meeting_id: str = PathParam(...), payload: dict[str, Any] = Body(default={})):
         """撤销导出（F5.8）。
 
-        **撤销不是删除文件**，而是从 manifest 里注销条目 ——
-        保留文件让用户还能手工找回，但界面和后续校验都不再认它。
+        删除选中产物与 manifest 条目；PDF 同时移除来源和归档登记。
         """
         _require_meeting(meeting_id, rt.db_path)
         rel_path = (payload.get("rel_path") or "").strip()
@@ -245,6 +244,11 @@ def register(router: APIRouter, rt: Runtime) -> None:
 
     @router.get("/meetings/{meeting_id}/export/{file}")
     def download_export(meeting_id: str = PathParam(...), file: str = PathParam(...)):
+        # 校验和读取覆盖同一会议锁，避免撤销/重导出插入二者之间。
+        with rt.meeting_lock(meeting_id):
+            return _download_export(meeting_id, file)
+
+    def _download_export(meeting_id: str, file: str):
         """下载导出文件（F5.1）。
 
         ★★★ **本端点是本卡唯一的安全红线** —— `file` 必须防路径穿越。

@@ -25,10 +25,12 @@ G3 approve 之后走到本节点才写审计。放在闸口里会因为 `interru
 from __future__ import annotations
 
 import logging
+import errno
 import json
 from typing import Any, Callable
 
 from mmwf.domain.errors import MmwfError
+from mmwf.infra.filestore import FileStoreError
 from mmwf.graph import idempotency as idem
 from mmwf.graph import state as S
 from mmwf.graph.nodes import _base as B
@@ -131,6 +133,16 @@ def make_archive(
     cfg = _resolve(deps, settings=settings, idem_store=idem_store)
 
     def archive(state: dict) -> dict:
+        from mmwf.app.services.export import delivery_lock
+        with delivery_lock(cfg.session(state).store):
+            try:
+                return archive_locked(state)
+            except OSError as exc:
+                if exc.errno == errno.ENOSPC:
+                    raise MmwfError(code='E9002', detail='归档存储空间不足') from exc
+                raise
+
+    def archive_locked(state: dict) -> dict:
         B.require_inputs(S.NODE_ARCHIVE, state)
         from mmwf.app.services.minutes import MinutesService
         minutes_service = MinutesService(cfg.settings)
@@ -140,30 +152,48 @@ def make_archive(
                            S.NODE_ARCHIVE)
         session = cfg.session(state)
 
-        def do() -> dict[str, Any]:
-            manifest = {
-                "meeting_id": B.meeting_id_of(state),
-                "export_paths": dict(state.get("export_paths") or {}),
-                "record_version": (state.get("review_result") or {}).get("version"),
-                "validation_issues": len(state.get("validation_issues") or []),
-                "archived_at": (now or _now)(),
-            }
-            session.store.write_json(ARCHIVE_MANIFEST, manifest)
-            return manifest
+        from mmwf.app.services.export import make_export_service, delivery_lock
+        service = make_export_service(B.meeting_id_of(state), cfg.settings)
+        with delivery_lock(session.store):
+            paths = dict(state.get("export_paths") or {})
+            pdfs = service.valid_pdf_entries(paths.get('docx', ''))
+            paths.pop('pdf', None)
+            if pdfs:
+                paths['pdf'] = pdfs
+            # 集合输入只在 export_paths 内扩展；不增加 PipelineState 顶层键。
+            paths['artifact_sha256'] = service.artifact_hashes(paths)
+            archive_state = {**state, 'export_paths': paths}
 
-        got, cached = B.idempotent(cfg.idem_store, S.NODE_ARCHIVE, state, do)
-        if not cached:
-            _audit_archive(session, state, got)
-            logger.info("archive 完成：台账已写入 %s", ARCHIVE_MANIFEST)
-        else:
-            logger.info("archive 幂等命中，跳过重复归档")
-        return {
-            "stage": S.STATUS_ARCHIVED,
-            "idem_keys": {
-                **(state.get("idem_keys") or {}),
-                S.NODE_ARCHIVE: _key_of(state, S.NODE_ARCHIVE),
-            },
-        }
+            def do() -> dict[str, Any]:
+                previous = session.store.read_json(ARCHIVE_MANIFEST) if session.store.exists(ARCHIVE_MANIFEST) else {}
+                manifest = {
+                    "meeting_id": B.meeting_id_of(state),
+                    "export_paths": paths,
+                    "record_version": (state.get("review_result") or {}).get("version"),
+                    "validation_issues": len(state.get("validation_issues") or []),
+                    "archived_at": previous.get('archived_at') or (now or _now)(),
+                }
+                service._write_json(ARCHIVE_MANIFEST, manifest)
+                return manifest
+
+            store = cfg.idem_store
+            key = _key_of(archive_state, S.NODE_ARCHIVE)
+            # DB 命中也必须有一致的实际清单；被删/损坏后重写，不能伪称复用。
+            if store is not None and store.get(key):
+                try:
+                    valid = service._archive_for_pdf(True)['export_paths'] == paths
+                except (OSError, ValueError, KeyError, TypeError, FileStoreError, MmwfError):
+                    valid = False
+                if not valid:
+                    store.drop(key)
+            got, cached = B.idempotent(store, S.NODE_ARCHIVE, archive_state, do)
+            if not cached:
+                _audit_archive(session, state, got)
+            return {
+                "stage": S.STATUS_ARCHIVED,
+                "export_paths": paths,
+                "idem_keys": {**(state.get("idem_keys") or {}), S.NODE_ARCHIVE: key},
+            }
 
     archive.__name__ = S.NODE_ARCHIVE
     archive.__doc__ = "归档产物并写台账（幂等）"

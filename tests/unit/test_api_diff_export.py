@@ -316,7 +316,13 @@ class TestDownload:
     def test_media_type_mapping(self, client, meeting, fs, ext, expect):
         _write_export(fs, ext, b"payload")
         r = client.get(f"{API}/meetings/{meeting}/export/{ext}")
-        assert expect in r.headers["content-type"], r.headers["content-type"]
+        if ext.endswith('.pdf'):
+            # F5.9：MIME 映射保留，伪名 PDF 不能沿一期记录稿兼容放行。
+            from mmwf.api.routes._support import _media_type_for
+            assert _media_type_for(ext) == 'application/pdf'
+            assert r.json()['code'] == 'E4001'
+        else:
+            assert expect in r.headers["content-type"], r.headers["content-type"]
 
     def test_download_writes_audit(self, client, meeting, fs, db_path):
         """★ 下载要留 `export_download` 痕（纪要正文被取走）。"""

@@ -101,7 +101,8 @@ class Runtime:
         with self._locks_guard:
             lock = self._meeting_locks.get(meeting_id)
             if lock is None:
-                lock = threading.RLock()
+                from mmwf.app.services.export import delivery_lock
+                lock = delivery_lock(self.filestore(meeting_id))
                 self._meeting_locks[meeting_id] = lock
             return lock
 
