@@ -206,6 +206,8 @@ def _extract_one_chunk(
             continue
         issues.append({
             "rule": "chunk_schema_failed",
+            "code": "E3002",
+            "message": f"纪要结构自检未通过，已自动重试 {max_schema_retries} 次。请核对原文后重试。",
             "chunk": chunk.index,
             "detail": f"第 {chunk.index} 块输出连续 {max_schema_retries + 1} 次"
                       f"未通过结构校验：" + "; ".join(

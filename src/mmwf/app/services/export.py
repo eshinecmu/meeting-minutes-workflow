@@ -189,6 +189,11 @@ class ExportResult:
         """只挑出字体相关的警告（E5002 的载荷）。"""
         return tuple(w for w in self.warnings if "font missing" in w)
 
+    @property
+    def warning_codes(self) -> tuple[str, ...]:
+        """机器可读的警告码，保留既有字体提示文案。"""
+        return ("E5002",) if self.font_warnings else ()
+
     def to_dict(self) -> dict:
         return {
             "meeting_id": self.meeting_id,
@@ -201,6 +206,7 @@ class ExportResult:
             "reused": self.reused,
             "warnings": list(self.warnings),
             "font_warnings": list(self.font_warnings),
+            "warning_codes": list(self.warning_codes),
             "doc": self.doc_conversion.to_dict(),
         }
 
@@ -393,7 +399,10 @@ class ExportService:
         if reused:
             stored = self._stored_of(rel_path)
         else:
-            stored = self.store.write(rel_path, payload, stage="export")
+            try:
+                stored = self.store.write(rel_path, payload, stage="export")
+            except PermissionError as exc:
+                raise MmwfError(code="E5004", detail="导出目标文件无法写入") from exc
 
         warnings = list(rendered.warnings)
 

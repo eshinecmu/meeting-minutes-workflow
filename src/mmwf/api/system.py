@@ -573,6 +573,13 @@ def probe_asr_quality(
             ),
         )
 
+    codes = sorted({code for row in rows for code in
+                    (_row_get(row, "asr_alert_codes") or []) if code in {"E2003", "E2004"}})
+    if codes:
+        return CheckResult(name="asr_quality", verdict=VERDICT_FAIL,
+            detail={**detail, "alert_codes": codes, "anomaly": ",".join(codes)},
+            note="；".join("转写结果出现异常，已暂停处理" if code == "E2003"
+                           else "热词零命中，请核对人名与单位名" for code in codes))
     confidences = _extract_confidences(rows)
     if not confidences:
         return CheckResult(

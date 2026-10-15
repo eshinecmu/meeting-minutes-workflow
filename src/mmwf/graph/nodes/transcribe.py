@@ -31,7 +31,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from mmwf.domain.asr_types import TranscriptResult, TranscriptSegmentResult
+from mmwf.domain.asr_types import TranscriptResult, TranscriptSegmentResult, hit_hotwords
+from mmwf.domain.errors import MmwfError
 from mmwf.graph import idempotency as idem
 from mmwf.graph import state as S
 from mmwf.graph.nodes import _base as B
@@ -73,9 +74,25 @@ def make_transcribe(
         engine = _provider(provider_factory, cfg, state)
 
         def do() -> dict[str, Any]:
-            return _run_transcription(
-                engine, state, session=session, hotwords=hotwords,
-            )
+            alerts = []
+            try:
+                got = _run_transcription(
+                    engine, state, session=session, hotwords=hotwords,
+                )
+            except MmwfError as exc:
+                if exc.code != "E2003":
+                    raise
+                alerts.append(exc.code)
+                logger.error("%s：%s", exc.code, exc.user_message)
+                _audit_quality(session, alerts, failed=True)
+                raise
+            result = got.get("_result")
+            if result is not None and hotwords and not hit_hotwords(result.segments, hotwords):
+                alerts.append("E2004")
+            if result is not None:
+                _audit_quality(session, alerts)
+            got["_alert_codes"] = alerts
+            return got
 
         got, cached = B.idempotent(cfg.idem_store, S.NODE_TRANSCRIBE, state, do)
 
@@ -97,6 +114,8 @@ def make_transcribe(
                 out["transcript_meta"] = meta
 
         errors = list(state.get("errors") or [])
+        for code in got.get("_alert_codes", []):
+            errors.append({**MmwfError(code=code).to_dict(), "node": S.NODE_TRANSCRIBE})
         for w in warn_msgs:
             errors.append({"code": "E2004", "node": S.NODE_TRANSCRIBE, "detail": str(w)})
         if got.get("_skipped"):
@@ -199,7 +218,7 @@ def _run_transcription(engine: Any, state: dict, *, session: Any,
     results: list[TranscriptResult] = []
     for p in paths:
         results.append(B.guard(S.NODE_TRANSCRIBE,
-                               lambda p=p: engine.transcribe(p, hotwords=hotwords)))
+                               lambda p=p: engine.transcribe(p, hotwords=hotwords)).validated())
     merged = _merge(results)
     _write_segments(session, merged, hotwords=hotwords)
     return {
@@ -207,6 +226,13 @@ def _run_transcription(engine: Any, state: dict, *, session: Any,
         "transcript": _segments_to_dicts(merged),
         "transcript_meta": _meta_of(merged, hotwords=hotwords),
     }
+
+
+def _audit_quality(session: Any, codes: list[str], *, failed: bool = False) -> None:
+    """仅持久化告警码；自检也能看见未进入 review 的 FATAL 结果。"""
+    session.audit.log(session.operator, "transcribe_done", target_type="meeting",
+                      target_id=session.meeting_id, detail={"asr_alert_codes": codes},
+                      result="failure" if failed else "success")
 
 
 def _available(engine: Any) -> bool:
