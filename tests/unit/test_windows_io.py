@@ -31,9 +31,27 @@ def windows_text_defaults(monkeypatch):
 
     def install():
         monkeypatch.setattr(locale, 'getpreferredencoding', lambda *args: 'cp936')
+        # pathlib 会先解析默认编码；UTF-8 模式下原函数会把 None 变成 utf-8，
+        # 必须在此保留 locale 标记，才能让 windows_open 模拟 Windows 默认值。
+        monkeypatch.setattr(io, 'text_encoding',
+                            lambda encoding, stacklevel=2: 'locale' if encoding is None else encoding)
         monkeypatch.setattr(io, 'open', windows_open)
 
     return install
+
+
+@pytest.mark.parametrize('encoding', [None, 'locale', 'utf-8'])
+@pytest.mark.parametrize('newline', [None, '\n'])
+def test_windows_text_defaults_respect_explicit_options(
+        tmp_path, windows_text_defaults, encoding, newline):
+    windows_text_defaults()
+    path = tmp_path / 'control.txt'
+    text = '中文\n'
+    path.write_text(text, encoding=encoding, newline=newline)
+    expected_text = '中文\r\n' if newline is None else text
+    expected_encoding = 'utf-8' if encoding == 'utf-8' else 'cp936'
+    assert path.read_bytes() == expected_text.encode(expected_encoding)
+    assert path.read_text(encoding=encoding) == text
 
 
 def test_shadow_reports_keep_utf8_lf(tmp_path, windows_text_defaults):
