@@ -356,3 +356,92 @@ class TestStoreWrite:
     def test_counts_include_disabled(self, store):
         assert store.count() == 4
         assert store.count(include_disabled=False) == 4
+
+
+# T2-02 B3：旧格式可读，绑定缺失只在应用时拒绝；选择不写库。
+@pytest.mark.parametrize("style", [
+    {"readings_allowed": "会议认为"}, {"readings_forbidden": None},
+    {"readings_allowed": [""]}, {"readings_forbidden": ["  "]},
+    {"readings_allowed": [1]},
+    {"section_bindings": []}, {"section_bindings": {}},
+    {"section_bindings": {"基本情况": "meeting_meta"}},
+    {"section_bindings": {"基本情况": "meeting_meta", "议定事项": "unknown"}},
+    {"section_bindings": {"基本情况": "meeting_meta", "议定事项": "actions", "多余": "actions"}},
+])
+def test_style_config_errors(style):
+    with pytest.raises(TemplateFormatError) as exc:
+        parse_template(_flat_body(style=style), source=SOURCE_DB)
+    assert exc.value.code == "E1001"
+
+
+def test_style_normalization_compatibility_and_bindings():
+    template = parse_template(_flat_body(style={"readings_forbidden": ["Ａ Ｂ", "ab", "差 不 多", "差不多"]}), source=SOURCE_DB)
+    assert template.style["readings_forbidden"] == ["ab", "差不多"]
+    assert "section_bindings" not in template.style
+    template = parse_template(_flat_body(style={"section_bindings": {"基本情况": "meeting_meta", "议定事项": "resolutions"}}), source=SOURCE_DB)
+    assert template.style["section_bindings"]["议定事项"] == "resolutions"
+
+
+@pytest.mark.parametrize("elements", [[{"key": "other", "label": "未知"}], [{"key": "title", "label": "标题", "min_count": 1}]])
+def test_invalid_required_config(elements):
+    with pytest.raises(TemplateFormatError):
+        parse_template(_flat_body(required_elements=elements), source=SOURCE_DB)
+
+
+def test_duplicate_section_titles():
+    with pytest.raises(TemplateFormatError):
+        parse_template(_flat_body(section_order=["重复", "重复"]), source=SOURCE_DB)
+
+
+def test_selection(store):
+    assert store.select().template_id == "tpl-regular-meeting-v1"
+    assert store.select(meeting_kind="party_group").template_id == "tpl-party-group-v1"
+    assert store.select("tpl-party-group-v1", meeting_kind="unknown").meeting_kind == "party_group"
+    for kwargs in ({"template_id": "unknown"}, {"template_id": ""}, {"meeting_kind": "unknown"}):
+        with pytest.raises(TemplateFormatError):
+            store.select(**kwargs)
+    custom = parse_template(_flat_body(template_id="custom", meeting_kind="unique"), source=SOURCE_DB)
+    store.create(custom)
+    assert store.select(meeting_kind="unique").template_id == "custom"
+    # 与内置同 kind 的自建模板也计入歧义。
+    store.create(parse_template(_flat_body(template_id="second", name="第二模板"), source=SOURCE_DB))
+    with pytest.raises(TemplateFormatError):
+        store.select(meeting_kind="regular_meeting")
+    disabled = parse_template(_flat_body(template_id="disabled", name="停用模板", enabled=False, meeting_kind="off"), source=SOURCE_DB)
+    store.create(disabled)
+    with pytest.raises(TemplateFormatError):
+        store.select("disabled")
+    with pytest.raises(TemplateFormatError):
+        store.select(meeting_kind="off")
+
+
+def test_hot_binding_order_and_builtin_load_has_no_writes(db_path, tmp_path):
+    import shutil
+    import yaml
+    from mmwf.domain.minutes import apply_template, render_template_markdown
+    from mmwf.infra.db import connect_ctx
+
+    config = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR / "templates", config / "templates")
+    store = make_template_store(db_path, config_dir=config)
+    minutes = {"meeting_time": "独有时间", "topics": [{"name": "独有议题", "discussion": "独有讨论"}]}
+    first = store.select()
+    path = config / "templates" / "regular-meeting.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["section_order"][0], data["section_order"][1] = data["section_order"][1], data["section_order"][0]
+    data["meta"]["version"] += 1
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    second = store.select()
+    assert second.version_no == first.version_no + 1
+    a, b = apply_template(minutes, first), apply_template(minutes, second)
+    assert b["sections"][0]["heading"] == a["sections"][1]["heading"]
+    assert b["sections"][0]["items"][0]["text"] == "独有讨论"
+    md = render_template_markdown(b, [])
+    assert md.index("独有讨论") < md.index("独有时间")
+    assert first.section_order[0] == data["section_order"][1]
+    # builtin 同版热改依旧可读，无历史登记或同版内容锁定。
+    data["meta"]["name"] = "同版热改纪要"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert store.select().name == "同版热改纪要"
+    with connect_ctx(db_path) as conn:
+        assert conn.execute("SELECT count(*) FROM template").fetchone()[0] == 0

@@ -233,6 +233,21 @@ class TemplateStore:
             return None
         return template_from_row(dict(row))
 
+    def select(
+        self, template_id: str | None = None, *, meeting_kind: str | None = None,
+    ) -> MinutesTemplate:
+        """一次应用选取一份快照；显式 id 优先，不猜会议类型。"""
+        if template_id is not None or meeting_kind is None:
+            tid = template_id if template_id is not None else "tpl-regular-meeting-v1"
+            tpl = self.get(tid)
+            if tpl is None or not tpl.enabled:
+                raise TemplateFormatError(f"模板 {tid!r} 不存在或已停用，请指定有效 id", field="template_id")
+            return tpl
+        result, _ = self.list_templates(meeting_kind=meeting_kind)
+        if len(result.templates) != 1:
+            raise TemplateFormatError("该会议类型无唯一启用模板，请指定 template_id", field="meeting_kind")
+        return result.templates[0]
+
     # -- 写表 -------------------------------------------------------------
 
     def create(

@@ -2,7 +2,7 @@ meta:
   template_id: tpl-regular-meeting-v1
   name: 工作例会议纪要
   meeting_kind: regular_meeting
-  version: 1
+  version: 2
 
 required_elements:
   - key: title
@@ -46,3 +46,8 @@ style:
     - 搞定
     - 弄一下
     - 有点问题
+  section_bindings:
+    会议基本情况: meeting_meta
+    工作汇报与讨论: discussions
+    议定事项: resolutions
+    下阶段工作安排: actions

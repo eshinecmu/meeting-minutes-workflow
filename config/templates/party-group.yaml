@@ -2,7 +2,7 @@ meta:
   template_id: tpl-party-group-v1
   name: 党组会议纪要
   meeting_kind: party_group
-  version: 1
+  version: 2
 
 required_elements:            # 必填要素，缺失即报问题清单
   - key: title
@@ -49,3 +49,8 @@ style:
     - 搞定
     - 弄一下
     - 有点问题
+  section_bindings:
+    会议基本情况: meeting_meta
+    会议听取和审议的事项: discussions
+    会议决定的事项: resolutions
+    会议要求: actions

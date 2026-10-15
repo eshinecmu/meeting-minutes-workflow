@@ -2,7 +2,7 @@ meta:
   template_id: tpl-coordination-v1
   name: 协调会议纪要
   meeting_kind: coordination
-  version: 1
+  version: 2
 
 required_elements:
   - key: title
@@ -49,3 +49,8 @@ style:
     - 搞定
     - 弄一下
     - 有点问题
+  section_bindings:
+    会议基本情况: meeting_meta
+    协调事项及各方意见: discussions
+    议定事项: resolutions
+    责任分工与时限: actions

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
@@ -251,6 +252,9 @@ def _parse_required_elements(raw: Any) -> tuple[RequiredElement, ...]:
                 duplicate=key,
             )
         seen.add(key)
+        if key not in {"title", "meeting_time", "location", "host", "recorder",
+                       "attendees", "topics", "resolutions", "action_items", "pending_decisions"}:
+            raise TemplateFormatError(f"未知必填要素：{key}", field=key)
 
         pattern = item.get("pattern")
         if pattern is not None:
@@ -278,6 +282,9 @@ def _parse_required_elements(raw: Any) -> tuple[RequiredElement, ...]:
                     f"{where}.min_count 不能是负数", field="required_elements"
                 )
 
+        if min_count is not None and key in {"title", "meeting_time", "location", "host", "recorder"}:
+            raise TemplateFormatError(f"{key} 是标量，不能配置 min_count", field=key)
+
         out.append(
             RequiredElement(key=key, label=label, pattern=pattern, min_count=min_count)
         )
@@ -304,16 +311,50 @@ def _parse_section_order(raw: Any) -> tuple[str, ...]:
                 f"section_order[{i}] 是空字符串 —— 空标题在界面上是一条空白行",
                 field="section_order",
             )
+        if text in sections:
+            raise TemplateFormatError(f"section_order 标题重复：{text}", field="section_order")
         sections.append(text)
     return tuple(sections)
 
 
-def _parse_style(raw: Any) -> dict[str, Any]:
+def _parse_style(raw: Any, section_order: Sequence[str] = ()) -> dict[str, Any]:
     if raw is None:
         return {}
     if not isinstance(raw, Mapping):
         raise TemplateFormatError("style 必须是对象", field="style")
-    return dict(raw)
+    style = dict(raw)
+    for key in ("readings_allowed", "readings_forbidden"):
+        if key not in style:
+            continue
+        words = style[key]
+        if not isinstance(words, list) or any(not isinstance(w, str) or not w.strip() for w in words):
+            raise TemplateFormatError(f"style.{key} 必须是非空字符串数组", field=key)
+        if key == "readings_forbidden":
+            # 禁词按实际匹配口径去重，白名单则保持精确字符串语义。
+            style[key] = list(dict.fromkeys(normalize_expression(w) for w in words))
+    if "section_bindings" in style:
+        bindings = style["section_bindings"]
+        if not isinstance(bindings, Mapping) or set(bindings) != set(section_order):
+            raise TemplateFormatError("section_bindings 必须与 section_order 标题一一对应", field="section_bindings")
+        if any(not isinstance(v, str) or v not in {"meeting_meta", "discussions", "resolutions", "actions"}
+               for v in bindings.values()):
+            raise TemplateFormatError("section_bindings 含未知源类型", field="section_bindings")
+        style["section_bindings"] = dict(bindings)
+    return style
+
+
+def normalize_expression(text: str) -> str:
+    """禁词的统一字面匹配口径；不删除标点。"""
+    return "".join(unicodedata.normalize("NFKC", text).casefold().split())
+
+
+def template_section_bindings(template: MinutesTemplate) -> dict[str, str]:
+    """旧模板允许读取，实际应用时必须补齐章节绑定。"""
+    order = _parse_section_order(template.section_order)
+    style = _parse_style(template.style, order)
+    if "section_bindings" not in style:
+        raise TemplateFormatError("应用模板缺少 style.section_bindings", field="section_bindings")
+    return style["section_bindings"]
 
 
 def parse_template(
@@ -398,13 +439,14 @@ def parse_template(
     if note is not None:
         note = _as_text(note, where="note")
 
+    section_order = _parse_section_order(pick("section_order"))
     return MinutesTemplate(
         template_id=tid,
         name=name,
         meeting_kind=kind,
         required_elements=_parse_required_elements(pick("required_elements")),
-        section_order=_parse_section_order(pick("section_order")),
-        style=_parse_style(pick("style")),
+        section_order=section_order,
+        style=_parse_style(pick("style"), section_order),
         version_no=version_no,
         enabled=enabled,
         source=source,

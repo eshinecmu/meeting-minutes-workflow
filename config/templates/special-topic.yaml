@@ -2,7 +2,7 @@ meta:
   template_id: tpl-special-topic-v1
   name: 专题会议纪要
   meeting_kind: special_topic
-  version: 1
+  version: 2
 
 required_elements:
   - key: title
@@ -49,3 +49,8 @@ style:
     - 搞定
     - 弄一下
     - 有点问题
+  section_bindings:
+    会议基本情况: meeting_meta
+    专题研究事项: discussions
+    议定事项: resolutions
+    工作要求: actions
