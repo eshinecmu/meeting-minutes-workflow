@@ -10,3 +10,12 @@ __all__ = [
     "WARNING", "SYNTHETIC", "parse_manifest", "parse_scores", "parse_records", "record_template",
     "score_template", "thaw",
 ]
+
+from .models import EvaluationBatch, Thresholds, Metric, ShadowSummary, parse_thresholds
+from .scoring import validate_scores, aggregate_metrics
+from .risks import index_issues, aggregate_risks
+from .report import project_records, render_report
+
+__all__ += ["EvaluationBatch", "Thresholds", "Metric", "ShadowSummary", "parse_thresholds",
+            "validate_scores", "aggregate_metrics", "index_issues", "aggregate_risks",
+            "project_records", "render_report"]

@@ -160,3 +160,58 @@ def test_csv_quotes_and_unicode_round_trip(tmp_path):
     assert got["meeting_name"] == records[0]["meeting_name"] == name
     assert got["divergence_classes"] == ""
     assert records[0]["divergence_classes"] is None
+
+
+@pytest.mark.parametrize("field,value", [
+    ("required_elements_min", -0.1), ("topic_recall_min", 1.1),
+    ("resolution_recall_min", True), ("topic_recall_min", float("nan")),
+    ("topic_recall_min", float("inf")), ("ungrounded_max", .001),
+    ("structure_min", .99999), ("required_elements_min", None),
+])
+def test_threshold_ranges_and_redlines(field, value):
+    from mmwf.domain.shadow import parse_thresholds
+    raw = read("thresholds.json")
+    raw[field] = value
+    with pytest.raises(ValueError):
+        parse_thresholds(raw)
+
+
+@pytest.mark.parametrize("change", [
+    {"confirmed": None}, {"required_elements": []}, {"meeting_kinds": ["a"]},
+    {"owner": ""}, {"long_meeting_boundary_seconds": 0},
+])
+def test_threshold_agreement_contract(change):
+    from mmwf.domain.shadow import parse_thresholds
+    raw = read("thresholds.json")
+    raw["agreement"].update(change)
+    with pytest.raises(ValueError):
+        parse_thresholds(raw)
+
+
+@pytest.mark.parametrize("change", [
+    {"statements": [{"id": "s", "candidate_location": "x", "source_locations": [], "supported": True, "reason": "SYNTHETIC"}]},
+    {"divergences_review_complete": False}, {"required_elements": ["x", "x"]},
+    {"author": "合成第三方丙", "reviewer": " 合成第三方丙 "},
+    {"statements": [{"id": "s", "candidate_location": "x", "source_locations": [], "supported": False, "reason": ""}]},
+])
+def test_full_score_declarations_and_manual_judgment_required(change):
+    raw = read("scores.json")
+    raw["scores"][0].update(change)
+    with pytest.raises(ValueError):
+        parse_scores(raw)
+
+
+def test_shadow_domain_has_no_framework_state_schema_or_io_imports():
+    import ast
+    allowed_stdlib = {"__future__", "dataclasses", "datetime", "types", "collections", "re", "math", "hashlib", "fractions", "html", "json"}
+    for path in (ROOT / "src/mmwf/domain/shadow").glob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                names = [n.name for n in node.names] if isinstance(node, ast.Import) else [node.module or ""]
+                for name in names:
+                    if isinstance(node, ast.ImportFrom) and node.level:
+                        continue
+                    assert name.split(".")[0] in allowed_stdlib or name.startswith("mmwf.domain.")
+            if isinstance(node, ast.Name):
+                assert node.id not in {"PipelineState", "MinutesSchema", "MinutesService", "MinutesStore", "open"}

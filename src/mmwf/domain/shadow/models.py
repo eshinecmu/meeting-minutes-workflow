@@ -258,3 +258,65 @@ def parse_records(raw):
         if not isinstance(row["notes"], str):
             raise ValueError("notes 必须为字符串")
     return tuple(freeze(row) for row in raw["records"])
+
+
+@dataclass(frozen=True)
+class EvaluationBatch:
+    """文件层已装载的批次及定位文档；领域函数不接触路径或文件。"""
+    batch_id: str
+    dataset_kind: str
+    meetings: tuple[Mapping, ...]
+    metadata: Mapping
+
+
+@dataclass(frozen=True)
+class Thresholds:
+    required_elements_min: float
+    topic_recall_min: float
+    resolution_recall_min: float
+    ungrounded_max: float
+    structure_min: float
+    agreement: Mapping
+
+
+@dataclass(frozen=True)
+class Metric:
+    numerator: int
+    denominator: int
+    value: float | None
+    threshold: float
+    passed: bool | None
+
+
+@dataclass(frozen=True)
+class ShadowSummary:
+    data: Mapping
+
+
+def parse_thresholds(raw):
+    """阈值是显式工具输入，不读取或修改项目配置。"""
+    import math
+    fields = tuple(Thresholds.__dataclass_fields__)
+    if not isinstance(raw, dict) or set(raw) != {"format_version", *fields} or type(raw["format_version"]) is not int or raw["format_version"] != 1:
+        raise ValueError("thresholds 字段不合约")
+    for key in fields[:-1]:
+        v = raw[key]
+        if type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1:
+            raise ValueError(f"{key} 必须为 [0,1] 有限比例")
+    if raw["ungrounded_max"] != 0 or raw["structure_min"] != 1:
+        raise ValueError("无依据与结构红线不得放宽")
+    a = raw["agreement"]
+    if not isinstance(a, dict):
+        raise ValueError("agreement 必须为对象")
+    for key in ("id", "date", "owner"):
+        text(a.get(key), f"agreement.{key}")
+    if type(a.get("confirmed")) is not bool:
+        raise ValueError("agreement.confirmed 必须为布尔值")
+    for key in ("required_elements", "meeting_kinds"):
+        v = a.get(key)
+        if not isinstance(v, list) or not v or any(not isinstance(i, str) or not i.strip() for i in v) or len(v) != len(set(v)):
+            raise ValueError(f"agreement.{key} 必须为唯一非空数组")
+    if len(a["meeting_kinds"]) != 4:
+        raise ValueError("agreement 必须约定四类会议或其映射")
+    integer(a.get("long_meeting_boundary_seconds"), "long_meeting_boundary_seconds", 1)
+    return Thresholds(**{k: freeze(raw[k]) for k in fields})
