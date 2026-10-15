@@ -36,7 +36,7 @@ SAD §10.1 允许"本地 embedding 或字符 n-gram Jaccard"。本卡选
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, cast
 
 __all__ = [
     "DEFAULT_DEDUP_THRESHOLD",
@@ -76,7 +76,7 @@ def similarity(a: str, b: str) -> float:
     return inter / union if union else 0.0
 
 
-def _ref_key(ref: dict) -> tuple:
+def _ref_key(ref: dict[str, object]) -> tuple[object, ...]:
     """ref 的去重键：优先用 `(segment_id)`，退化到 `(start_ms, quote)`。"""
     sid = ref.get("segment_id")
     if sid:
@@ -84,14 +84,14 @@ def _ref_key(ref: dict) -> tuple:
     return ("ms", ref.get("start_ms"), str(ref.get("quote") or ref.get("text") or ""))
 
 
-def _union_refs(*ref_lists: Iterable[dict]) -> list[dict]:
+def _union_refs(*ref_lists: Iterable[dict[str, object]]) -> list[dict[str, object]]:
     """★ 取并集（**不是覆盖**）。保序去重，先出现的在前。
 
     这是本模块最重要的一行契约：施工卡原文"`source_refs` 要取并集而非覆盖，
     否则溯源会丢"。所有合并点都必须走这里。
     """
-    out: list[dict] = []
-    seen: set[tuple] = set()
+    out: list[dict[str, object]] = []
+    seen: set[tuple[object, ...]] = set()
     for lst in ref_lists:
         for ref in lst or []:
             if not isinstance(ref, dict):
@@ -104,7 +104,7 @@ def _union_refs(*ref_lists: Iterable[dict]) -> list[dict]:
     return out
 
 
-def _intervals_overlap(a: dict, b: dict) -> bool:
+def _intervals_overlap(a: dict[str, object], b: dict[str, object]) -> bool:
     """两个 ref 的区间是否重叠（重叠区重复判定的**必要条件**）。
 
     判据（任一成立即算重叠）：
@@ -117,8 +117,8 @@ def _intervals_overlap(a: dict, b: dict) -> bool:
     """
     if a.get("segment_id") and a.get("segment_id") == b.get("segment_id"):
         return True
-    a0, a1 = a.get("start_ms"), a.get("end_ms")
-    b0, b1 = b.get("start_ms"), b.get("end_ms")
+    a0, a1 = cast(int | None, a.get("start_ms")), cast(int | None, a.get("end_ms"))
+    b0, b1 = cast(int | None, b.get("start_ms")), cast(int | None, b.get("end_ms"))
     if a0 is None or b0 is None:
         return False
     # 单点时间戳（无 end）时，视为一个 1ms 的瞬时点，只要同起点即算重叠
@@ -127,7 +127,7 @@ def _intervals_overlap(a: dict, b: dict) -> bool:
     return not (a1 < b0 or b1 < a0)
 
 
-def _info_score(item: dict) -> int:
+def _info_score(item: dict[str, object]) -> int:
     """一条事项的"信息量"（重叠区裁决用，SAD §10.1 Step 3 末条）。
 
     信息量 = 正文长度 + 责任人非空加分 + 有时限加分。
@@ -191,16 +191,16 @@ class MergeResult:
         }
 
 
-def _item_text(item: dict) -> str:
+def _item_text(item: dict[str, object]) -> str:
     return str(item.get("text") or item.get("content") or "")
 
 
-def _merge_one_group(group: Sequence[dict], *, dedup_threshold: float,
-                     stats: MergeStats) -> dict:
+def _merge_one_group(group: Sequence[dict[str, object]], *, dedup_threshold: float,
+                     stats: MergeStats) -> dict[str, object]:
     """把一组"同一条事项"的多个副本合成一条：refs 取并集，正文取信息量最大的。"""
     best = max(group, key=_info_score)
     merged = dict(best)
-    merged["refs"] = _union_refs(*(g.get("refs") or [] for g in group))
+    merged["refs"] = _union_refs(*(cast(list[dict[str, object]], g.get("refs")) or [] for g in group))
     # 责任人/时限：任一副本有就带上（并集语义，别丢）
     for k in ("owner", "deadline"):
         if not str(merged.get(k) or "").strip():
@@ -214,23 +214,23 @@ def _merge_one_group(group: Sequence[dict], *, dedup_threshold: float,
 
 
 def _dedup_items(
-    items: Sequence[dict], *, threshold: float, stats: MergeStats,
+    items: Sequence[dict[str, object]], *, threshold: float, stats: MergeStats,
     counter: str,
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """按"相似度 ≥ 阈值 **且** 区间重叠"去重（施工卡判据，两个条件缺一不可）。
 
     用**聚类**而不是"和上一条比"：同一事项可能在 3 个块里各出现一次，
     只和上一条比会漏掉不相邻的那次。
     """
-    groups: list[list[dict]] = []
+    groups: list[list[dict[str, object]]] = []
     for it in items:
         placed = False
         for g in groups:
             if similarity(_item_text(g[0]), _item_text(it)) < threshold:
                 continue
             if not any(_intervals_overlap(r, s)
-                       for r in (g[0].get("refs") or [])
-                       for s in (it.get("refs") or [])):
+                       for r in (cast(list[dict[str, object]], g[0].get("refs")) or [])
+                       for s in (cast(list[dict[str, object]], it.get("refs")) or [])):
                 # 相似但区间不重叠 —— 是**两条不同的信息**，不合并
                 stats.kept_distinct += 1
                 continue
@@ -264,9 +264,9 @@ def merge_chunk_results(
         `MergeResult`。空输入返回空结果（**不抛**，U-EX-10）。
     """
     stats = MergeStats()
-    topics_raw: list[dict] = []
-    resolutions_raw: list[dict] = []
-    actions_raw: list[dict] = []
+    topics_raw: list[dict[str, object]] = []
+    resolutions_raw: list[dict[str, object]] = []
+    actions_raw: list[dict[str, object]] = []
 
     for r in results or []:
         if not isinstance(r, dict):
@@ -283,7 +283,7 @@ def merge_chunk_results(
     stats.actions_in = len(actions_raw)
 
     # ---- 议题聚类：名称 + 讨论 一起比（只比名称会把"预算"和"预算执行"当成两个）----
-    topic_groups: list[list[dict]] = []
+    topic_groups: list[list[dict[str, object]]] = []
     for t in topics_raw:
         key = f"{t.get('title') or t.get('name') or ''} {t.get('discussion') or ''}"
         placed = False
@@ -297,12 +297,12 @@ def merge_chunk_results(
         if not placed:
             topic_groups.append([t])
 
-    merged_topics: list[dict] = []
+    merged_topics: list[dict[str, object]] = []
     for g in topic_groups:
         best = max(g, key=lambda x: len(str(x.get("discussion") or "")))
         merged = dict(best)
         merged["title"] = best.get("title") or best.get("name") or ""
-        merged["refs"] = _union_refs(*(x.get("refs") or [] for x in g))
+        merged["refs"] = _union_refs(*(cast(list[dict[str, object]], x.get("refs")) or [] for x in g))
         merged_topics.append(merged)
     stats.topics_out = len(merged_topics)
 

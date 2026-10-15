@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Sequence, cast
 
 from mmwf.domain.segments import Segment
+
+if TYPE_CHECKING:
+    from mmwf.domain.minutes.issues import Issue
 
 __all__ = [
     "MATCH_FUZZY",
@@ -67,14 +70,14 @@ class GroundingResult:
     confidence: float
 
     refs: tuple[dict[str, Any], ...] = ()
-    issues: tuple[dict[str, Any], ...] = ()
+    issues: tuple[Mapping[str, object], ...] = ()
 
     @property
     def ok(self) -> bool:
         return self.matched is not None
 
     def to_dict(self) -> dict[str, Any]:
-        data = {"matched": self.matched, "ref": self.ref, "confidence": self.confidence}
+        data: dict[str, object] = {"matched": self.matched, "ref": self.ref, "confidence": self.confidence}
         # 旧精确 API 的三键序列化不变；新绑定同时暴露全部引用和诊断。
         if self.refs or self.issues:
             data.update(refs=list(self.refs), issues=list(self.issues))
@@ -130,11 +133,13 @@ def bind_grounding_exact(
 MATCH_FUZZY = "fuzzy"
 
 
-def union_refs(*groups) -> list[dict]:
+def union_refs(*groups: object) -> list[dict[str, object]]:
     """同段不同 quote 必须保留，不能只按 segment_id 消重。"""
-    out, seen = [], set()
+    out: list[dict[str, object]] = []
+    seen: set[tuple[object, ...]] = set()
     for group in groups:
-        for ref in group:
+        # Persisted metadata arrives as object; retain the existing iterable contract.
+        for ref in cast(Iterable[Mapping[str, object]], group):
             key = tuple(ref.get(k) for k in ("segment_id", "quote", "start_ms", "end_ms"))
             if key not in seen:
                 seen.add(key)
@@ -142,8 +147,9 @@ def union_refs(*groups) -> list[dict]:
     return out
 
 
-def _normalized_map(text):
-    chars, positions = [], []
+def _normalized_map(text: str) -> tuple[str, list[int]]:
+    chars: list[str] = []
+    positions: list[int] = []
     for i, char in enumerate(text):
         normalized = normalize_punct(char)
         chars.extend(normalized)
@@ -175,13 +181,14 @@ def bind_grounding(quote: str, segments: Sequence[Segment]) -> GroundingResult:
     if not nq or not segments:
         return GroundingResult(None, None, 0.0)
 
-    def result(mode, selected, windows, confidence, ambiguous=False):
+    def result(mode: str, selected: Sequence[Segment], windows: Sequence[str],
+               confidence: float, ambiguous: bool = False) -> GroundingResult:
         refs = []
         for seg, window in zip(selected, windows):
             ref = _make_ref(seg, quote)
             ref.update(matched_text=window, matched=mode, confidence=confidence)
             refs.append(ref)
-        issues = []
+        issues: list[Issue] = []
         if mode == MATCH_FUZZY:
             issues.append(make_issue("GROUNDING_FUZZY", "", "原文有字词差异，待核对", source="grounding"))
         if ambiguous:
@@ -191,7 +198,7 @@ def bind_grounding(quote: str, segments: Sequence[Segment]) -> GroundingResult:
         return GroundingResult(mode, refs[0], confidence, tuple(refs), tuple(issues))
 
     for mode in (MATCH_EXACT, MATCH_NORMALIZED):
-        matches = []
+        matches: list[tuple[tuple[tuple[int, str], ...], list[tuple[Segment, str]]]] = []
         for i in range(len(segments)):
             for count in range(1, min(3, len(segments) - i) + 1):
                 selected = segments[i:i + count]

@@ -234,16 +234,16 @@ def _bind_refs(quote: str, segments: Sequence[Segment]) -> list[dict[str, Any]]:
 def _schema_to_graph(
     minutes: MinutesSchema,
     segments: Sequence[Segment],
-) -> tuple[list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     """把 `MinutesSchema` 摊平成图兼容的三个列表。
 
     议题与事项是**嵌套**关系（事项挂在议题下），但图契约是三个**平铺**列表。
     摊平的同时给事项带上 `topic` 字段（指回所属议题名），
     这样 `naive_generate` 仍能按议题归组渲染。
     """
-    topics: list[dict] = []
-    resolutions: list[dict] = []
-    actions: list[dict] = []
+    topics: list[dict[str, object]] = []
+    resolutions: list[dict[str, object]] = []
+    actions: list[dict[str, object]] = []
 
     for ti, t in enumerate(minutes.topics, start=1):
         topics.append({
@@ -331,7 +331,7 @@ def extract_minutes(
     chunk_results: list[dict[str, Any]] = []
     chunk_minutes: list[MinutesSchema] = []
 
-    def _work(ch: Chunk) -> tuple[Chunk, MinutesSchema | None, list[dict]]:
+    def _work(ch: Chunk) -> tuple[Chunk, MinutesSchema | None, list[dict[str, object]]]:
         obj, iss = _extract_one_chunk(
             ch, llm=llm, max_schema_retries=cfg["max_schema_retries"]
         )

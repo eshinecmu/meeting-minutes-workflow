@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, cast
 
 from mmwf.domain.review.split import (
     format_duration_ms,
@@ -233,7 +233,8 @@ def split_for_review(
     """
     from mmwf.domain.review.split import split_for_review as _split
 
-    return _split(segments, thresholds)
+    # The helper only iterates; its list/tuple annotation is narrower than this API.
+    return _split(cast(list[Any] | tuple[Any, ...], segments), thresholds)
 
 
 def summarize_review(items: Sequence[ReviewItem], total: int) -> str:
@@ -302,7 +303,7 @@ def render_record(
             而这种错误在成品里看不出来 —— 必须当场停）。
     """
     if isinstance(metadata, Mapping):
-        meta = RecordMetadata(**dict(metadata))  # type: ignore[arg-type]
+        meta = RecordMetadata(**dict(metadata))
     else:
         meta = metadata
 
