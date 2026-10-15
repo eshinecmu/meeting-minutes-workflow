@@ -62,7 +62,7 @@ class GateService:
         return status
 
     def apply_decision(self, meeting_id, gate, checkpoint_id, decision, payload,
-                       operator, comment, *, auto=False, reason="human"):
+                       operator, comment, *, auto=False, reason="human", decided_at=None):
         gate = gate.upper()
         try:
             request = DecisionInput(checkpoint_id=checkpoint_id, decision=decision,
@@ -117,12 +117,16 @@ class GateService:
                       "timeout_count": count, "flow_design_warning": count >= 2}
             if auto:
                 from mmwf.infra.gate_store import now_iso
-                snapshot = runner.checkpoint()
+                self.observe_pending(meeting_id, runner)
                 detail.update(approval_timeout_hours=self.runtime.cfg.thresholds.gate.approval_timeout_hours,
-                              awaiting_since=snapshot.created_at, decided_at=now_iso())
+                              awaiting_since=self.store.awaiting_since(meeting_id),
+                              decided_at=decided_at or now_iso())
             registered = self.store.register(record, detail)
             if canonical_json(registered["request"]) != canonical_json(signature):
                 raise MmwfError(code="E4001", detail="该检查点已有其他决定")
+            if auto and count >= 2:
+                logger.warning("同一会议多次审批超时，建议检查流程设计：meeting_id=%s timeout_count=%s",
+                               meeting_id, count)
             return self._resume(runner, registered)
 
     def _resume(self, runner, record):

@@ -79,14 +79,27 @@ class GateStore:
             rows = conn.execute("SELECT detail FROM audit_log WHERE action='gate_decision' AND target_id=? AND result='success'", (meeting_id,))
             return len({d["checkpoint_id"] for r in rows if (d := json.loads(r[0])).get("auto") is True and d.get("reason") == "timeout"})
 
+    def meeting_ids(self):
+        """枚举会议而非等待表，兼容旧数据缺少 task_state 的情况。"""
+        with connect_ctx(self.db_path) as conn:
+            return [r[0] for r in conn.execute("SELECT meeting_id FROM meeting ORDER BY meeting_id")]
+
+    def awaiting_since(self, meeting_id):
+        with connect_ctx(self.db_path) as conn:
+            row = conn.execute("SELECT awaiting_since FROM task_state WHERE task_id=?", (meeting_id,)).fetchone()
+            return row[0] if row else None
+
     def observe(self, meeting_id, status, created_at):
         pending = status.pending_gate
         stamp = now_iso()
         with connect_ctx(self.db_path) as conn, transaction(conn, immediate=True):
-            # 同轮始终取不可变 checkpoint.created_at，读取不会续期。
+            # 节点推进会清空等待时间；同一中断的读取只补缺，不覆盖已存起点。
             conn.execute("""INSERT INTO task_state (task_id,current_node,status,awaiting_actor,awaiting_since,updated_at)
                 VALUES (?,?,?,?,?,?) ON CONFLICT(task_id) DO UPDATE SET
                 current_node=excluded.current_node,status=excluded.status,awaiting_actor=excluded.awaiting_actor,
-                awaiting_since=excluded.awaiting_since,updated_at=excluded.updated_at""",
+                awaiting_since=CASE WHEN excluded.status IN ('G2_awaiting','G3_awaiting')
+                    AND task_state.status=excluded.status AND task_state.current_node=excluded.current_node
+                    THEN COALESCE(task_state.awaiting_since,excluded.awaiting_since)
+                    ELSE excluded.awaiting_since END,updated_at=excluded.updated_at""",
                 (meeting_id, status.current_node or status.status, status.status, status.awaiting_actor,
                  created_at if pending else None, stamp))

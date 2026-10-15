@@ -172,25 +172,37 @@ def test_wait_time_comes_from_checkpoint_and_is_stable(gate_env):
     assert first["awaiting_since"] == second["awaiting_since"] == created
 
 
-def test_human_and_automatic_decision_compete(gate_env):
-    """C4 tick 后续调用同一入口；此处只验证核心防重，不实现巡检。"""
+def test_human_and_timeout_tick_compete(gate_env):
+    """同一检查点的真实巡检与 HTTP 人工决定只允许一个赢家。"""
+    from datetime import datetime, timedelta, timezone
+    from threading import Barrier
+    from mmwf.app.services.gate_timeout import GateTimeout
+
     e = gate_env
     ckpt = e.pending["checkpoint_id"]
+    now = datetime.now(timezone.utc)
+    with connect_ctx(e.rt.db_path) as conn:
+        conn.execute("UPDATE task_state SET awaiting_since=? WHERE task_id=?",
+                     ((now - timedelta(hours=72)).isoformat(), e.mid))
+    barrier = Barrier(2)
 
     def automatic():
-        try:
-            return e.rt.gate_service().apply_decision(e.mid, "G2", ckpt, "reject", None, "system", "", auto=True, reason="timeout")
-        except Exception as exc:
-            from mmwf.domain.errors import MmwfError
-            assert isinstance(exc, MmwfError) and exc.code == "E4001"
-            return None
+        barrier.wait(timeout=5)
+        return GateTimeout(e.rt, clock=lambda: now).patrol_once()
+
+    def human():
+        barrier.wait(timeout=5)
+        return send(e, "G2", ckpt)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        human = pool.submit(send, e, "G2", ckpt)
+        human_request = pool.submit(human)
         auto = pool.submit(automatic)
-        human_result, auto_result = human.result(), auto.result()
+        human_result, auto_result = human_request.result(), auto.result()
     assert bool(human_result["ok"]) + bool(auto_result) == 1
     assert len(audits(e)) == 1 and verify_chain(e.rt.db_path).ok
+    assert audits(e)[0].detail["checkpoint_id"] == ckpt
+    with connect_ctx(e.rt.db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM idempotency_record WHERE node_id='gate_decision'").fetchone()[0] == 1
 
 
 def test_snapshot_failure_prevents_registration_and_resume(gate_env, monkeypatch):

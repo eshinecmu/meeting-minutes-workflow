@@ -97,10 +97,21 @@ def create_app(settings: Settings | None = None) -> Any:
 
     @asynccontextmanager
     async def lifespan(app):
+        from threading import Event, Thread
         from starlette.concurrency import run_in_threadpool
+        from mmwf.app.services.gate_timeout import GateTimeout
 
         await run_in_threadpool(app.state.runtime.gate_service().recover_pending_decisions)
-        yield
+        patrol = GateTimeout(app.state.runtime)
+        stop = Event()
+        thread = Thread(target=patrol.patrol_loop, args=(stop,), name="mmwf-gate-timeout")
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            # 等待正在执行的同步图结束；join 不阻塞事件循环。
+            await run_in_threadpool(thread.join)
 
     app = FastAPI(
         lifespan=lifespan,
