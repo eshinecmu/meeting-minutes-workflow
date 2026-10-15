@@ -155,13 +155,14 @@ def check_forbidden_expressions(minutes: Mapping, template: MinutesTemplate) -> 
 
 def _reading_level(discussion: str, allowed) -> int | None:
     text = discussion.strip()
-    for prefix in allowed:
+    for prefix in sorted(allowed, key=len, reverse=True):
         if text.startswith(prefix):
             text = re.sub(r"^[，,:：\s]*", "", text[len(prefix):])
             break
     # 先分句再规范化，避免中文分隔符被 NFKC 转成半角后漏分句。
     text = unicodedata.normalize("NFKC", re.split(r"[。！？；\n]", text, maxsplit=1)[0]).strip()
-    if any(word in text for word in ("决定", "议定", "审议通过", "同意")):
+    if any(not text[max(0, match.start() - 2):match.start()].endswith(("不", "不予", "未", "没有"))
+           for match in re.finditer("决定|议定|审议通过|同意", text)):
         return 0
     imperative = text.startswith(("请", "要")) or any(w in text for w in ("必须", "务必", "应当", "不得", "严禁"))
     for match in re.finditer("完成|推进|落实|确保|抓紧", text):

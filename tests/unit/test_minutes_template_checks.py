@@ -139,6 +139,51 @@ def test_decision_keywords(text):
     assert check_reading_levels({"topics": [{"discussion": text, "readings": ["会议决定"]}]}, tpl()) == []
 
 
+@pytest.mark.parametrize("prefixes", [
+    ["会议审议", "会议审议通过"],
+    ["会议审议通过", "会议审议"],
+])
+@pytest.mark.parametrize("separator", ["", "，", "： "])
+def test_reading_prefix_uses_longest_match(prefixes, separator):
+    template = tpl()
+    template.style["readings_allowed"].extend(prefixes)
+    original = deepcopy(template)
+    minutes = {"topics": [{"discussion": f"会议审议通过{separator}请报送材料。总体稳定。",
+                           "readings": ["会议认为"]}]}
+    issues = check_reading_levels(minutes, template)
+    assert [i["rule"] for i in issues] == ["reading_level_mismatch"]
+    assert issues[0]["expected"] == ["会议要求"]
+    assert template == original
+
+
+@pytest.mark.parametrize("negation", ["不", "不予", "未", "没有"])
+@pytest.mark.parametrize("keyword", ["决定", "议定", "审议通过", "同意"])
+def test_negated_decision_keywords_fall_through(negation, keyword):
+    minutes = {"topics": [{"discussion": f"经研究，{negation}{keyword}该方案，总体形势稳定",
+                           "readings": ["会议决定"]}]}
+    issues = check_reading_levels(minutes, tpl())
+    assert [i["rule"] for i in issues] == ["reading_level_mismatch"]
+    assert issues[0]["expected"] == ["会议认为", "会议指出"]
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("不同意该方案，必须补充材料", ["会议要求"]),
+    ("不予同意该方案，涉及基本原则", ["会议强调"]),
+    ("不决定该事项", None),
+    ("不同意原方案，同意新方案", ["会议决定", "会议议定", "会议审议通过", "会议同意"]),
+    ("同意新方案，不同意原方案", ["会议决定", "会议议定", "会议审议通过", "会议同意"]),
+    ("未收到材料，同意延期", ["会议决定", "会议议定", "会议审议通过", "会议同意"]),
+])
+def test_negated_decision_keeps_remaining_rules(text, expected):
+    minutes = {"topics": [{"discussion": text}]}
+    issues = check_reading_levels(minutes, tpl())
+    if expected is None:
+        assert issues == []
+    else:
+        assert [i["rule"] for i in issues] == ["reading_missing"]
+        assert issues[0]["expected"] == expected
+
+
 @pytest.mark.parametrize("text", ["必须", "务必", "应当", "不得", "严禁", "完成", "推进", "落实", "确保", "抓紧"])
 def test_imperative_keywords(text):
     assert check_reading_levels({"topics": [{"discussion": text, "readings": ["会议要求"]}]}, tpl()) == []
