@@ -258,7 +258,15 @@ def make_checkpointer(db_path: Path | str):
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(p), check_same_thread=False)
     saver = SqliteSaver(conn)
-    saver.setup()
+    try:
+        saver.setup()
+    except sqlite3.DatabaseError as exc:
+        conn.close()
+        if getattr(exc, "sqlite_errorcode", None) not in {sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB}:
+            raise
+        from mmwf.domain.errors import MmwfError
+        raise MmwfError(code="E4002", detail="检查点数据库损坏",
+                        user_message="任务进度记录已损坏，无法继续恢复。请从上游重新投递并重跑。") from exc
     return saver
 
 

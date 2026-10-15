@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -247,7 +248,17 @@ def _load_recent_segments(db_path: Path | str, *, limit: int = 500) -> list[dict
     )
     with connect_ctx(db_path) as conn:
         rows = conn.execute(sql, (max(1, min(int(limit), 5000)),)).fetchall()
-    return [dict(r) for r in rows]
+        # 最新一次已执行的转写覆盖旧告警，包含未能落分段的静默失效。
+        latest = conn.execute(
+            "SELECT detail FROM audit_log WHERE action='transcribe_done' "
+            "ORDER BY log_id DESC LIMIT 1"
+        ).fetchone()
+    records = [dict(r) for r in rows]
+    if latest:
+        detail = json.loads(latest["detail"] or "{}")
+        if detail.get("asr_alert_codes"):
+            records.append({"asr_alert_codes": detail["asr_alert_codes"]})
+    return records
 
 def _latest_record_rel(store: Any) -> str | None:
     """取最新一版记录稿的相对路径（`record/vN.md`），没有则 None。
