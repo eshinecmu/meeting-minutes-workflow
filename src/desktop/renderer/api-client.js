@@ -128,3 +128,26 @@ export async function downloadIssues(meetingId, allowRetry = true) {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+
+/** 导出下载复用既有端点、令牌和统一错误信封，正文不进入页面。 */
+export async function downloadExport(meetingId, path, allowRetry = true) {
+  const filename = path.split('/').pop();
+  const res = await fetch(`${BASE}/meetings/${encodeURIComponent(meetingId)}/export/${encodeURIComponent(filename)}`, {
+    headers: { 'X-MMWF-Token': TOKEN },
+  });
+  if ((res.headers.get('content-type') || '').includes('application/json')) {
+    const env = await res.json();
+    if (env.code === E_SESSION_EXPIRED && allowRetry) {
+      await refreshToken();
+      return downloadExport(meetingId, path, false);
+    }
+    throw new AppError(env.code, env.message);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

@@ -1,0 +1,156 @@
+STUB 命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -s -ra -p no:cacheprovider -p accept_f5_9 -p f59_stub_config --basetemp /private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure0/data tests/integration/test_pdf_soffice.py
+soffice 命令：/private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure0/soffice-stub --version
+版本：F5.9 STUB ONLY, not LibreOffice
+DOCX SHA256：7bddfae234e61b4c99bc29964788031304fffb6d57390db6e3bf641531a56458
+PDF SHA256：5fd8e61660485ba53be0f98405c305bac66606ea272fc0e136057e89fa48c0e5
+字体诊断：[]；目标机字体版本、人工版式与签字仍须另附
+.
+=============================== warnings summary ===============================
+tests/integration/test_pdf_soffice.py::test_real_pdf_source_registry
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 passed, 1 warning in 1.25s
+
+.STUB 命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -s -ra -p no:cacheprovider -p accept_f5_9 -p f59_stub_config --basetemp /private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure1/data tests/integration/test_pdf_soffice.py
+E
+==================================== ERRORS ====================================
+_______________ ERROR at setup of test_real_pdf_source_registry ________________
+
+    @pytest.fixture
+    def real_soffice():
+        cfg = load_settings(Path(__file__).resolve().parents[2] / 'config')
+        configured = cfg.export.soffice_path
+        executable = str(configured) if configured else shutil.which('soffice')
+        if not executable or not Path(executable).exists():
+            pytest.skip(REASON)
+        # 已检测到程序：执行权限、版本探测及实际转换失败不能再 skip。
+>       version = subprocess.run([executable, '--version'], capture_output=True, text=True,
+                                 encoding='utf-8', errors='replace', timeout=180, check=True)
+
+tests/integration/test_pdf_soffice.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+input = None, capture_output = True, timeout = 180, check = True
+popenargs = (['/private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure1/soffice-stub', '--version'],)
+kwargs = {'encoding': 'utf-8', 'errors': 'replace', 'stderr': -1, 'stdout': -1, ...}
+process = <Popen: returncode: 9 args: ['/private/var/folders/h5/hx7bbybn4j9422jrdzpkgl...>
+stdout = 'F5.9 STUB ONLY, not LibreOffice\n', stderr = '', retcode = 9
+
+    def run(*popenargs,
+            input=None, capture_output=False, timeout=None, check=False, **kwargs):
+        """Run command with arguments and return a CompletedProcess instance.
+    
+        The returned instance will have attributes args, returncode, stdout and
+        stderr. By default, stdout and stderr are not captured, and those attributes
+        will be None. Pass stdout=PIPE and/or stderr=PIPE in order to capture them,
+        or pass capture_output=True to capture both.
+    
+        If check is True and the exit code was non-zero, it raises a
+        CalledProcessError. The CalledProcessError object will have the return code
+        in the returncode attribute, and output & stderr attributes if those streams
+        were captured.
+    
+        If timeout (seconds) is given and the process takes too long,
+         a TimeoutExpired exception will be raised.
+    
+        There is an optional argument "input", allowing you to
+        pass bytes or a string to the subprocess's stdin.  If you use this argument
+        you may not also use the Popen constructor's "stdin" argument, as
+        it will be used internally.
+    
+        By default, all communication is in bytes, and therefore any "input" should
+        be bytes, and the stdout and stderr will be bytes. If in text mode, any
+        "input" should be a string, and stdout and stderr will be strings decoded
+        according to locale encoding, or by "encoding" if set. Text mode is
+        triggered by setting any of text, encoding, errors or universal_newlines.
+    
+        The other arguments are the same as for the Popen constructor.
+        """
+        if input is not None:
+            if kwargs.get('stdin') is not None:
+                raise ValueError('stdin and input arguments may not both be used.')
+            kwargs['stdin'] = PIPE
+    
+        if capture_output:
+            if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+                raise ValueError('stdout and stderr arguments may not be used '
+                                 'with capture_output.')
+            kwargs['stdout'] = PIPE
+            kwargs['stderr'] = PIPE
+    
+        with Popen(*popenargs, **kwargs) as process:
+            try:
+                stdout, stderr = process.communicate(input, timeout=timeout)
+            except TimeoutExpired as exc:
+                process.kill()
+                if _mswindows:
+                    # Windows accumulates the output in a single blocking
+                    # read() call run on child threads, with the timeout
+                    # being done in a join() on those threads.  communicate()
+                    # _after_ kill() is required to collect that and add it
+                    # to the exception.
+                    exc.stdout, exc.stderr = process.communicate()
+                else:
+                    # POSIX _communicate already populated the output so
+                    # far into the TimeoutExpired exception.
+                    process.wait()
+                raise
+            except:  # Including KeyboardInterrupt, communicate handled that.
+                process.kill()
+                # We don't call process.wait() as .__exit__ does that for us.
+                raise
+            retcode = process.poll()
+            if check and retcode:
+>               raise CalledProcessError(retcode, process.args,
+                                         output=stdout, stderr=stderr)
+E               subprocess.CalledProcessError: Command '['/private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure1/soffice-stub', '--version']' returned non-zero exit status 9.
+
+../../.local/share/uv/python/cpython-3.12.15-macos-aarch64-none/lib/python3.12/subprocess.py:571: CalledProcessError
+=========================== short test summary info ============================
+ERROR tests/integration/test_pdf_soffice.py::test_real_pdf_source_registry - ...
+1 error in 0.22s
+
+.STUB 命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -s -ra -p no:cacheprovider -p accept_f5_9 -p f59_stub_config --basetemp /private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure2/data tests/integration/test_pdf_soffice.py
+soffice 命令：/private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure2/soffice-stub --version
+版本：F5.9 STUB ONLY, not LibreOffice
+F
+=================================== FAILURES ===================================
+________________________ test_real_pdf_source_registry _________________________
+
+real_soffice = '/private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure2/soffice-stub'
+gate_env = namespace(client=<starlette.testclient.TestClient object at 0x108009490>, app=<fastapi.applications.FastAPI object at ...5ad6275672b9', 'gate_g3'), ('m-5ad6275672b9', 'gate_g3'), ('m-5ad6275672b9', 'export'), ('m-5ad6275672b9', 'archive')])
+
+    def test_real_pdf_source_registry(real_soffice, gate_env):
+        e = gate_env
+        e.rt.cfg = e.rt.cfg.model_copy(update={
+            'export': e.rt.cfg.export.model_copy(update={'soffice_path': Path(real_soffice)})})
+        pending = e.client.post(e.base + '/gate/G2/decide', json={
+            'checkpoint_id': e.pending['checkpoint_id'], 'decision': 'approve', 'operator': '秘书'}).json()
+        assert pending['ok'], pending
+        approved = e.client.post(e.base + '/gate/G3/decide', json={
+            'checkpoint_id': pending['data']['pending_gate']['checkpoint_id'],
+            'decision': 'approve', 'operator': '秘书'}).json()
+        assert approved['ok'], approved
+        response = e.client.post(e.base + '/export', json={'artifact': 'minutes', 'format': 'pdf'}).json()
+>       assert response['ok'], response
+E       AssertionError: {'code': 'E5003', 'data': None, 'message': 'PDF 转换失败，请重试或联系技术人员。', 'ok': False, ...}
+E       assert False
+
+tests/integration/test_pdf_soffice.py:41: AssertionError
+------------------------------ Captured log setup ------------------------------
+WARNING  mmwf.infra.keystore:keystore.py:205 主密钥以明文文件形式存放（/private/var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/pytest-of-fengwang/pytest-707/test_gated_body_with_configure2/data/test_real_pdf_source_registry0/data/.master.key）——这是待加固项，正式部署前必须改接 OS 凭据管理器
+WARNING  mmwf.app.services.review:review.py:536 未注入 AuditLogger：记录稿 record/v2.md 的生成未留痕（部署手册 §6.2 要求记录稿生成可追溯）
+=============================== warnings summary ===============================
+tests/integration/test_pdf_soffice.py::test_real_pdf_source_registry
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/integration/test_pdf_soffice.py::test_real_pdf_source_registry
+1 failed, 1 warning in 1.13s
+
+.
+3 passed in 3.71s

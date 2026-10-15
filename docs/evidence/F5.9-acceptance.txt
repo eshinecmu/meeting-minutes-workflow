@@ -1,0 +1,111 @@
+真实转换/人工版式 PENDING，目标机通过 0；Electron 实际操作待验，人工签字不得自动生成
+
+标准 1：同源转换与范围
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/1/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/1/report.xml tests/unit/test_pdf_export_service.py::test_exact_command_source_and_cleanup tests/unit/test_pdf_export_service.py::test_direct_entry_has_no_arbitrary_path_bypass tests/contract/test_pdf_export_contract.py tests/integration/test_pdf_export_pipeline.py::test_selected_version_missing_draft_and_new_final
+...................                                                      [100%]
+=============================== warnings summary ===============================
+tests/contract/test_pdf_export_contract.py::test_invalid_requests_are_global_business_envelopes[payload0]
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/1/report.xml -
+19 passed, 1 warning in 1.99s
+计数：executed=19 passed=19 failed=0 error=0 skipped=0
+
+标准 2：全出口硬阻断
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/2/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/2/report.xml tests/integration/test_pdf_export_pipeline.py::test_current_bad_working_copy_blocks_history_cache_download_and_archive tests/integration/test_pdf_export_pipeline.py::test_download_final_and_source_checks tests/integration/test_pdf_export_pipeline.py::test_font_fail_blocks_even_with_pdf_cache tests/contract/test_pdf_export_contract.py
+......................                                                   [100%]
+=============================== warnings summary ===============================
+tests/integration/test_pdf_export_pipeline.py::test_current_bad_working_copy_blocks_history_cache_download_and_archive
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/2/report.xml -
+22 passed, 1 warning in 2.72s
+计数：executed=22 passed=22 failed=0 error=0 skipped=0
+
+标准 3：失败语义
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/3/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/3/report.xml tests/unit/test_pdf_export_service.py tests/integration/test_pdf_export_pipeline.py::test_explicit_conversion_failures_never_return_old_link tests/integration/test_pdf_export_pipeline.py::test_registration_failure_and_retry tests/integration/test_pdf_export_pipeline.py::test_missing_soffice_explicit_error_and_old_doc_soft_failure tests/contract/test_exporter_contract.py tests/unit/test_export_service.py::TestDocConversion::test_skipped_without_soffice tests/unit/test_export_service.py::TestDocConversion::test_skipped_does_not_fail_export tests/unit/test_export_service.py::TestDocConversion::test_not_attempted_by_default tests/unit/test_export_service.py::TestResultObject
+.............................................                            [100%]
+=============================== warnings summary ===============================
+tests/integration/test_pdf_export_pipeline.py::test_explicit_conversion_failures_never_return_old_link[timeout]
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/3/report.xml -
+45 passed, 1 warning in 4.42s
+计数：executed=45 passed=45 failed=0 error=0 skipped=0
+
+标准 4：幂等与恢复
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/4/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/4/report.xml tests/integration/test_pdf_export_pipeline.py::test_pdf_result_download_archive_and_idempotency tests/integration/test_pdf_export_pipeline.py::test_damaged_cache_is_never_reused tests/integration/test_pdf_export_pipeline.py::test_same_meeting_direct_concurrency_serializes_conversion tests/integration/test_pdf_export_pipeline.py::test_registration_failure_and_retry tests/integration/test_pdf_export_pipeline.py::test_selected_version_missing_draft_and_new_final tests/unit/test_export_service.py::TestIdempotency tests/integration/test_export_performance.py
+...............................                                          [100%]
+=============================== warnings summary ===============================
+tests/integration/test_pdf_export_pipeline.py::test_pdf_result_download_archive_and_idempotency
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+tests/integration/test_export_performance.py::test_docx_export_within_ten_seconds_cold_and_warm
+  tests/integration/test_export_performance.py:67: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_docx_export_within_ten_seconds_cold_and_warm(tmp_path, record_property):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/4/report.xml -
+31 passed, 2 warnings in 6.40s
+计数：executed=31 passed=31 failed=0 error=0 skipped=0
+
+标准 5：留档与撤销
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/5/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/5/report.xml tests/integration/test_pdf_export_pipeline.py::test_before_archive_merge_collection_key_and_repair tests/integration/test_pdf_export_pipeline.py::test_pdf_result_download_archive_and_idempotency tests/integration/test_pdf_export_pipeline.py::test_missing_archive_does_not_fabricate_history tests/integration/test_pdf_export_pipeline.py::test_undo_only_pdf_and_retry_after_partial_failure
+....                                                                     [100%]
+=============================== warnings summary ===============================
+tests/integration/test_pdf_export_pipeline.py::test_before_archive_merge_collection_key_and_repair
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/5/report.xml -
+4 passed, 1 warning in 1.65s
+计数：executed=4 passed=4 failed=0 error=0 skipped=0
+
+标准 6：API 与桌面联证
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/6/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/6/report.xml tests/contract/test_pdf_export_contract.py tests/integration/test_pdf_export_pipeline.py::test_pdf_result_download_archive_and_idempotency tests/integration/test_pdf_export_pipeline.py::test_download_final_and_source_checks tests/unit/test_api_diff_export.py tests/contract/test_pdf_desktop_contract.py
+........................................................................ [ 97%]
+..                                                                       [100%]
+=============================== warnings summary ===============================
+tests/contract/test_pdf_export_contract.py::test_invalid_requests_are_global_business_envelopes[payload0]
+  /Users/fengwang/Documents/RecordFilesProcessing/.venv/lib/python3.12/site-packages/langgraph/checkpoint/base/__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/6/report.xml -
+74 passed, 1 warning in 3.95s
+计数：executed=74 passed=74 failed=0 error=0 skipped=0
+
+标准 7：真实转换（目标机项）
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -s -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/7/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/7/report.xml tests/integration/test_pdf_soffice.py
+s
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/7/report.xml -
+=========================== short test summary info ============================
+SKIPPED [1] tests/integration/test_pdf_soffice.py:29: F5.9 真转换待验：未安装/未配置 soffice，须目标机 LibreOffice 运行
+1 skipped in 0.13s
+计数：executed=0 passed=0 failed=0 error=0 skipped=1
+
+标准 8：可信验收脚本
+命令：/Users/fengwang/Documents/RecordFilesProcessing/.venv/bin/python -m pytest -o addopts= -q -ra -p no:cacheprovider -p accept_f5_9 --basetemp /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/8/data --junitxml /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/8/report.xml tests/unit/test_accept_f5_9.py
+...............................                                          [100%]
+- generated xml file: /var/folders/h5/hx7bbybn4j9422jrdzpkgln00000gp/T/f59_33zk1ofw/8/report.xml -
+31 passed in 6.54s
+计数：executed=31 passed=31 failed=0 error=0 skipped=0
+PASS 标准 1 同源转换与范围
+PASS 标准 2 全出口硬阻断
+PASS 标准 3 失败语义
+PASS 标准 4 幂等与恢复
+PASS 标准 5 留档与撤销
+PASS 标准 6 API 与桌面联证
+PENDING 标准 7 真实转换（目标机项）
+PASS 标准 8 可信验收脚本
+本次所选 8 项：7 PASS + 1 PENDING + 0 FAIL
+TOOLING_PASS F5.9（7/7）
+真实转换/人工版式 PENDING，目标机通过 0；Electron 实际操作待验，人工签字不得自动生成

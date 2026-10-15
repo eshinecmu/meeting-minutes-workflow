@@ -1,7 +1,7 @@
 /**
  * 页面 · 导出（第 ③ 步）
  * ============================================================================
- * 归档后把纪要导出为符合 GB/T 9704—2012 的 .docx。
+ * 归档后导出纪要 DOCX 或同源普通 PDF，记录稿只导 DOCX。
  *
  * ⚠️ 导出是**幂等**的：重复调用返回同一个路径。
  * 所以界面上要处理好"已经导出过了"的情况，别让人以为没成功。
@@ -62,6 +62,23 @@ export async function renderExport(view, meeting, shell) {
   }
   row.appendChild(artifact);
 
+  const format = document.createElement('select');
+  format.setAttribute('aria-label', '导出格式');
+  for (const [value, label] of [['docx', 'DOCX'], ['pdf', 'PDF（普通 PDF）']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    format.appendChild(option);
+  }
+  row.appendChild(format);
+  artifact.addEventListener('change', () => {
+    const record = artifact.value === 'record';
+    format.querySelector('option[value="pdf"]').disabled = record;
+    if (record) format.value = 'docx';
+    result.replaceChildren();
+  });
+  format.addEventListener('change', () => result.replaceChildren());
+
   const exportBtn = document.createElement('button');
   exportBtn.className = 'btn btn-primary';
   exportBtn.textContent = '导出为文档';
@@ -82,13 +99,20 @@ export async function renderExport(view, meeting, shell) {
 
   exportBtn.addEventListener('click', async () => {
     exportBtn.disabled = true;
+    artifact.disabled = true;
+    format.disabled = true;
     result.replaceChildren();
     try {
+      const payload = { artifact: artifact.value, format: format.value };
+      if (format.value === 'pdf') payload.convert_doc = false;
       const data = await api.call(
         'POST',
         `/meetings/${meeting.meeting_id}/export`,
-        { artifact: artifact.value }
+        payload
       );
+      if (format.value === 'pdf' && (data.format !== 'pdf' || data.pdf?.status !== 'ok')) {
+        throw new api.AppError('E5003', 'PDF 未生成，请检查 LibreOffice 配置后重试。');
+      }
       const path = data.path;
       result.appendChild(
         S.notice(
@@ -98,6 +122,21 @@ export async function renderExport(view, meeting, shell) {
             : `文档已生成：${path}`
         )
       );
+
+      for (const warning of data.font_warnings || []) {
+        result.appendChild(S.notice('warning', String(warning)));
+      }
+      const download = document.createElement('button');
+      download.className = 'btn';
+      download.textContent = '下载文档';
+      download.addEventListener('click', async () => {
+        try {
+          await api.downloadExport(meeting.meeting_id, path);
+        } catch (err) {
+          S.showError(err);
+        }
+      });
+      result.appendChild(download);
 
       // 撤销入口（导出是幂等的，误导出可以撤）
       const undo = document.createElement('button');
@@ -118,9 +157,12 @@ export async function renderExport(view, meeting, shell) {
       });
       result.appendChild(undo);
     } catch (err) {
+      result.replaceChildren();
       S.showError(err);
     } finally {
       exportBtn.disabled = false;
+      artifact.disabled = false;
+      format.disabled = false;
     }
   });
 
@@ -128,6 +170,6 @@ export async function renderExport(view, meeting, shell) {
 
   // 术语提示：导出文件按密级管理（F8.5 的界面侧提醒，不做定密决策）
   view.appendChild(
-    S.notice('info', `导出文件请按会议密级管理，确认流转范围。${TEXT.FORMAT_CHECK}已完成。`)
+    S.notice('info', `导出文件请按会议密级管理，确认流转范围。${TEXT.FORMAT_CHECK}后请人工核对 PDF 版式。`)
   );
 }

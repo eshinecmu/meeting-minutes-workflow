@@ -201,6 +201,12 @@ raise SystemExit(main())
 
 
 def test_sec05_real_startup_has_one_loopback_listener(tmp_path):
+    # 先独立探测环境权限；只门控沙箱拒绝，不吞后端启动/监听断言失败。
+    with socket.socket() as probe:
+        try:
+            probe.bind(('127.0.0.1', 0))
+        except PermissionError:
+            pytest.skip('SEC-05 待验：环境禁止绑定回环端口，须在允许监听的目标环境重跑；不计通过')
     with backend(tmp_path, listen=True) as running:
         listeners = [c for c in psutil.Process(running.proc.pid).net_connections(kind='inet')
                      if c.status == psutil.CONN_LISTEN]

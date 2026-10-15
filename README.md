@@ -4,7 +4,9 @@
 
 全流程在本机完成——转写与摘要均为本地推理，程序自身零外部网络请求。
 
-**项目状态**：一期 W1—W8 与 T1-18 打包已完成；**Phase 2 工程卡 T2-01～T2-05 全部完成**。T2-05 工具自动验收 **TOOLING_PASS（8/8）**，218 次定向证据（跨项复用）；本轮 unit/contract/integration **70 passed**。剩余为目标机 / 人工项：真实 ASR V1/V2、M3/M4/M5、Electron 视觉与实际操作、V3/V4、真实影子运行、R-5；R-4 完整人工证据与 Q2/Q3/Q4 也仍开放。**真实 ≥20 场 PENDING，计入 0，工具通过不代表放开使用。** 详见 [T2-05 实施记录](docs/T2-05-施工卡.md#63-实施记录e3e5) 和 [验收完整输出](docs/evidence/T2-05-acceptance.txt)。本轮未运行全量，等待外部检查循环取证。
+**项目状态**：一期 W1—W8 与 T1-18 打包已完成；**Phase 2 工程卡 T2-01～T2-05 全部完成**。T2-05 工具自动验收 **TOOLING_PASS（8/8）**，218 次定向证据（跨项复用）；本轮 unit/contract/integration **70 passed**。剩余为目标机 / 人工项：真实 ASR V1/V2、M3/M4/M5、Electron 视觉与实际操作、V3/V4、真实影子运行、R-5；R-4 完整人工证据与 Q2/Q3/Q4 也仍开放。**真实 ≥20 场 PENDING，计入 0，工具通过不代表放开使用。** 详见 [T2-05 实施记录](docs/T2-05-施工卡.md#63-实施记录e3e5) 和 [验收完整输出](docs/evidence/T2-05-acceptance.txt)。T2-05 当轮未运行全量；本次 F5.9 审查完整检查结果见下。
+
+**F5.9 PDF 导出**：H2/H3 工程已实现，含桌面普通 PDF 选择、下载/撤销、可信计数脚本与反例。自动验收 **TOOLING_PASS（7/7）**，标准 7 因缺 soffice 为 PENDING，真实转换/人工版式与 Electron 实际操作仍待目标机，**目标机通过 0**。假 soffice 已独立执行门控主体并核对来源/manifest，仅计 stub 证据。本次指定完整检查退出 0：**3354 passed、19 skipped、1 deselected**；额外 SEC-05 skip 为沙箱禁止回环绑定，保留目标环境待验。见 [施工卡实施记录](docs/F5.9-PDF导出-施工卡.md#65-实施记录h3-验收脚本与文档)、[完整验收输出](docs/evidence/F5.9-acceptance.txt) 和 [门控 stub 输出](docs/evidence/F5.9-soffice-stub.txt)。
 
 阶段 F F6 门禁补齐：领域层 `mypy --strict` 已归零，接入流水线与 pytest；单元覆盖率以 `pytest-cov` 对 `tests/unit` 实测，门槛为 75%。详见 [门禁补齐记录](docs/施工日志与踩坑实录.md#阶段-f-f6门禁补齐)。
 
