@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Sequence
 
-from mmwf.domain.extraction.segmentize import Segment
+from mmwf.domain.segments import Segment
 
 __all__ = [
     "MATCH_FUZZY",
