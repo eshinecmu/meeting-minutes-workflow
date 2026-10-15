@@ -477,6 +477,7 @@ class ExportService:
 
     def _convert_with_soffice(self, docx_rel_path: str, target: str) -> DocConversion:
         """内部进程接缝；PDF 使用会议明文区内的独立工作目录。"""
+        # 定位只查配置/PATH，不启动版本探测；180 秒仅留给实际文档转换。
         soffice = self.soffice_path or shutil.which("soffice")
         if not soffice or not Path(soffice).exists():
             return DocConversion(status="skipped", reason="未找到 soffice（LibreOffice），请安装或配置后重试。")

@@ -2,6 +2,7 @@
 import errno
 import hashlib
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -121,3 +122,32 @@ def test_direct_entry_has_no_arbitrary_path_bypass(converter):
     with pytest.raises(MmwfError) as caught:
         svc.export_pdf(artifact='record')
     assert caught.value.code == 'E1001' and not calls
+
+
+@pytest.mark.parametrize('target', ['doc', 'pdf'])
+def test_sleeping_windows_soffice_conversion_times_out(env, tmp_path, monkeypatch, target):
+    """Windows soffice 挂起时仍走软失败，实际子进程超时在 Mac 上验证。"""
+    executable = tmp_path / 'Program Files' / 'LibreOffice' / 'program' / 'soffice.exe'
+    executable.parent.mkdir(parents=True)
+    executable.write_text('import time\ntime.sleep(60)\n', encoding='utf-8')
+    svc = _svc(env, soffice_path=str(executable))
+    source = svc.export_docx(installed_fonts=FONTS_OK)
+    original_run = subprocess.run
+    calls = []
+
+    def run(args, **kw):
+        calls.append(args)
+        assert args[:4] == [str(executable), '--headless', '--convert-to', target]
+        assert kw['timeout'] == 180
+        # 保留真实超时/杀进程语义，只把测试等待缩短。
+        return original_run([sys.executable, *args], **{**kw, 'timeout': 0.2})
+
+    monkeypatch.setattr('mmwf.app.services.export.subprocess.run', run)
+    got = svc._convert_with_soffice(source.rel_path, target)
+    assert len(calls) == 1  # 定位不另起可能挂住的 --version 探测。
+    assert got.status == 'failed' and got.rel_path is None
+    assert got.reason == '调用 soffice 失败：TimeoutExpired'
+    assert not svc.store.exists(str(Path(source.rel_path).with_suffix('.' + target)))
+    assert svc.store.read(source.rel_path).startswith(b'PK')
+    assert not list(svc.store.resolve('export').glob('.pdf-*'))
+    assert svc.store.verify_manifest() == []

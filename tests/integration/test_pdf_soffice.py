@@ -19,9 +19,10 @@ def real_soffice():
     executable = str(configured) if configured else shutil.which('soffice')
     if not executable or not Path(executable).exists():
         pytest.skip(REASON)
+    # Windows 上版本探测也可能卡住；只给探测 15 秒，真实转换仍保留 180 秒。
     # 已检测到程序：执行权限、版本探测及实际转换失败不能再 skip。
     version = subprocess.run([executable, '--version'], capture_output=True, text=True,
-                             encoding='utf-8', errors='replace', timeout=180, check=True)
+                             encoding='utf-8', errors='replace', timeout=15, check=True)
     print(f'soffice 命令：{executable} --version\n版本：{version.stdout.strip()}')
     return executable
 

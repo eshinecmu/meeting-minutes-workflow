@@ -185,7 +185,7 @@ def test_pdf_stub_launches_python_without_posix_permissions(monkeypatch, tmp_pat
     plugin = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(plugin)
     plugin.pytest_configure(None)
-    script = str(tmp_path / 'soffice_stub.py')
+    script = str(tmp_path / 'Program Files' / 'LibreOffice' / 'program' / 'soffice.exe')
     with pytest.raises(Captured):
-        module.subprocess.run([script, '--version'], check=True)
+        module.subprocess.run([script, '--version'], check=True, timeout=15)
     assert commands[-1] == [executable, script, '--version']
