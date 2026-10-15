@@ -1,7 +1,35 @@
 """T2-01 验收脚本的漏召回回归锁。"""
 
+import errno
 import importlib.util
 from pathlib import Path
+
+import pytest
+
+
+@pytest.mark.parametrize("error,blocked", [
+    (PermissionError("sandbox blocked"), True),
+    (OSError(errno.EPERM, "Operation not permitted"), True),
+    (ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"), False),
+])
+def test_probe_local_llm_distinguishes_sandbox_block(monkeypatch, error, blocked):
+    path = Path(__file__).resolve().parents[2] / "tools" / "accept_t2_01.py"
+    spec = importlib.util.spec_from_file_location("accept_t2_01", path)
+    acceptance = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(acceptance)
+
+    def fail_connection(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(acceptance.shutil, "which", lambda name: None)
+    monkeypatch.setattr(acceptance.socket, "create_connection", fail_connection)
+    result = acceptance.probe_local_llm()
+    if blocked:
+        assert "探测被沙箱拦截（不能作为无模型证据）" in result
+        assert "unreachable" not in result
+    else:
+        assert "unreachable（ConnectionRefusedError:" in result
+        assert "探测被沙箱拦截" not in result
 
 
 def test_standard_10_fails_when_fake_drops_one_resolution(monkeypatch, tmp_path, capsys):

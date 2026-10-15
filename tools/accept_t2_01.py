@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import logging
 import shutil
@@ -217,7 +218,10 @@ def probe_local_llm() -> str:
         with socket.create_connection(("127.0.0.1", 11434), timeout=0.5):
             port = "可达（未运行模型质量验收）"
     except OSError as exc:
-        port = f"unreachable（{type(exc).__name__}: {exc}）"
+        if isinstance(exc, PermissionError) or exc.errno == errno.EPERM:
+            port = "探测被沙箱拦截（不能作为无模型证据）"
+        else:
+            port = f"unreachable（{type(exc).__name__}: {exc}）"
     return f"which ollama：{executable or '未找到'}；127.0.0.1:11434：{port}"
 
 
