@@ -386,14 +386,18 @@ def test_rejects_absolute_path(store: FileStore):
         "\\Windows\\System32",   # Windows 根路径（反斜杠）
         "/Windows/System32",     # Windows 根路径（正斜杠）
         "C:/Windows/System32",   # 带盘符
+        r"C:\Windows\System32",  # 带盘符（反斜杠）
+        "c:x",                   # 盘符相对路径
+        r"\\server\share\x",     # UNC 路径（反斜杠）
+        "//server/share/x",      # UNC 路径（正斜杠）
     ],
 )
 def test_rejects_rooted_paths_on_any_platform(store: FileStore, bad: str):
-    """`Path('/x').is_absolute()` 在 Windows 上是 False，只靠它挡不住根路径。
+    """宿主平台的 Path 语义不足以识别另一平台的根路径与盘符。
 
-    本用例把四种"看起来像相对路径、实则是根路径"的写法全部钉住。
+    本用例在所有平台钉住根路径、盘符相对路径与 UNC 路径的拦截行为。
     """
-    with pytest.raises(FileStoreError):
+    with pytest.raises(FileStoreError, match="rel_path 必须是相对路径"):
         store.resolve(bad)
 
 

@@ -47,7 +47,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
 from mmwf.infra.crypto import FileCipher, sha256_bytes, sha256_file
@@ -157,9 +157,9 @@ class FileStore:
 
         防穿越是必须的：rel_path 早晚会来自 API 请求参数。
 
-        注意 Windows 的坑：`Path("/etc/passwd").is_absolute()` 在 Windows 上是
-        **False**（因为没有盘符），只靠 `is_absolute()` 会漏掉以 `/` 或 `\\`
-        开头的根路径。因此额外显式拒绝前导斜杠，并在最后做一次
+        路径检查不能只依赖宿主平台：Windows 会把无盘符的根路径视为非绝对路径，
+        POSIX 则不识别 Windows 盘符。必须同时检查两种平台的根与盘符语义，
+        拒绝根路径、盘符相对路径和 UNC 路径，并在最后做一次
         "解析后的真实路径必须落在 store_root 之内"的兜底检查——
         这才是真正可靠的防线。
         """
@@ -167,7 +167,7 @@ class FileStore:
         if not s or s[0] in ("/", "\\"):
             raise FileStoreError(f"rel_path 必须是相对路径：{rel_path!r}")
         p = Path(s)
-        if p.is_absolute() or p.drive:
+        if PurePosixPath(s).anchor or PureWindowsPath(s).anchor:
             raise FileStoreError(f"rel_path 必须是相对路径：{rel_path!r}")
         if ".." in p.parts:
             raise FileStoreError(f"rel_path 不允许包含 '..'：{rel_path!r}")
