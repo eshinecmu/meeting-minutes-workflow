@@ -1,0 +1,9 @@
+{
+  "format_version": 1,
+  "batch_id": null,
+  "dataset_kind": null,
+  "labels": [
+    "影子生成，禁止交付"
+  ],
+  "records": []
+}

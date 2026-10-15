@@ -1,0 +1,76 @@
+{
+  "template_id": "tpl-party-group-v1",
+  "name": "党组会议纪要",
+  "meeting_kind": "party_group",
+  "version_no": 2,
+  "enabled": true,
+  "source": "builtin",
+  "required_elements": [
+    {
+      "key": "title",
+      "label": "标题",
+      "pattern": "^.{4,30}$"
+    },
+    {
+      "key": "meeting_time",
+      "label": "会议时间"
+    },
+    {
+      "key": "location",
+      "label": "会议地点"
+    },
+    {
+      "key": "host",
+      "label": "主持人"
+    },
+    {
+      "key": "attendees",
+      "label": "参会人员",
+      "min_count": 2
+    },
+    {
+      "key": "topics",
+      "label": "议题",
+      "min_count": 1
+    },
+    {
+      "key": "resolutions",
+      "label": "议定事项",
+      "min_count": 1
+    }
+  ],
+  "section_order": [
+    "会议基本情况",
+    "会议听取和审议的事项",
+    "会议决定的事项",
+    "会议要求"
+  ],
+  "style": {
+    "readings_allowed": [
+      "会议认为",
+      "会议指出",
+      "会议强调",
+      "会议要求",
+      "会议决定",
+      "会议同意",
+      "会议听取",
+      "会议审议"
+    ],
+    "readings_forbidden": [
+      "大家觉得",
+      "差不多",
+      "可能吧",
+      "应该是",
+      "反正",
+      "搞定",
+      "弄一下",
+      "有点问题"
+    ],
+    "section_bindings": {
+      "会议基本情况": "meeting_meta",
+      "会议听取和审议的事项": "discussions",
+      "会议决定的事项": "resolutions",
+      "会议要求": "actions"
+    }
+  }
+}

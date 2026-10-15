@@ -1,0 +1,338 @@
+{
+  "format_version": 1,
+  "batch_id": "synthetic-e3",
+  "dataset_kind": "synthetic",
+  "labels": [
+    "SYNTHETIC / 合成数据，非真实验收结果"
+  ],
+  "scores": [
+    {
+      "meeting_id": "synthetic-1",
+      "candidate_fingerprint": "69cfda2e4de7c39e5096119321aa82cb449b16430f78c1a8e53e1f6fc7796a90",
+      "source_fingerprint": "6a61210cf362969335685799a124f0210643eb30b556a0efe7d0ffd6939140cf",
+      "template_fingerprint": "490751f33b4cfd9c53ad5591d90a37fe5bc939c760934b15fe5bc9d76f674519",
+      "human_final_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+      "reviewer": "合成评分人乙",
+      "author": "合成撰写人甲",
+      "reviewed_at": "2026-01-01T00:00:00Z",
+      "author_blind_to_candidate": true,
+      "required_elements": [
+        "title",
+        "topics"
+      ],
+      "element_presence": {
+        "title": false,
+        "topics": true
+      },
+      "human_topic_ids": [
+        "human-topic-1"
+      ],
+      "topic_matches": [
+        {
+          "human_id": "human-topic-1",
+          "candidate_id": "topics[0]",
+          "evidence": "candidate.json#/minutes/topics/0"
+        }
+      ],
+      "human_resolution_ids": [
+        "human-resolution-1"
+      ],
+      "resolution_matches": [
+        {
+          "human_id": "human-resolution-1",
+          "candidate_id": "topics[0].resolutions[0]",
+          "evidence": "candidate.json#/minutes/topics/0/resolutions/0"
+        }
+      ],
+      "statements": [
+        {
+          "id": "s1",
+          "candidate_location": "candidate.json#/minutes/topics/0/discussion",
+          "source_locations": [
+            "synthetic-1.segments.json#seg-1"
+          ],
+          "supported": true,
+          "reason": "SYNTHETIC 人为编排的格式向量，不是真实判卷"
+        },
+        {
+          "id": "s2",
+          "candidate_location": "candidate.json#/minutes/topics/0/resolutions/0",
+          "source_locations": [
+            "synthetic-1.segments.json#seg-2"
+          ],
+          "supported": true,
+          "reason": "SYNTHETIC 人为编排的格式向量，不是真实判卷"
+        },
+        {
+          "id": "s3",
+          "candidate_location": "candidate.json#/minutes/topics/0/action_items/0",
+          "source_locations": [
+            "synthetic-1.segments.json#seg-3"
+          ],
+          "supported": true,
+          "reason": "SYNTHETIC 人为编排的格式向量，不是真实判卷"
+        }
+      ],
+      "statements_coverage_complete": true,
+      "statement_exclusion_policy": "合成格式向量仅列三项正文；标题、编号、元信息不计入此向量",
+      "structure_compliant": false,
+      "structure_evidence": "合成向量：元信息缺失需人工补充",
+      "divergences": [],
+      "divergences_review_complete": true,
+      "issue_reviews": [
+        {
+          "issue_id": "a500265725677291963c741789a9416756af353d06be79f9b85d42b0028afc35",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "e70cb5bdc024f9728a3bdcd3d9b476e6bf34e0b8c396e741cc9cc38860c25182",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "74abb98a0fe57ab9dfb07ad4c86ce4ff8eefc7a962d574b11dbf5ffcc0c2ee6a",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "ba9c291915551840b9960dd0bd893837cca518dc09b9c761d4443588622eb22f",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "58788d2b980ca9f7dd639569cd8c4396732c1c6d050d74fd1c4e5cfadb6e6bc0",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "1096c37cd72bfc8f5a04e669c0a904d4054dd4f1de3c7c7a202113858f5bb98c",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "6468aacb930a8e1990f94ef64cca83b5d05501bbe7df1fad683653872dee8e61",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "5d8b4efc9e22b67524754ede522e990abc1375a7daf385eedba8d545d85d56af",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "b6b6db54c19dab5af347b36e4257ba74f2a984086a8d6c8e19b551df079f338e",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "d72170a4053c5e8fd014b6fde9c54208fa232d9d7b4c2a52444a1a06394b8fb9",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "7fcee48fee8cfe137f965951fe72b83745b3f065931725a4e09e3d6b2b18dec6",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "47a7e5d3ed03e052403881188584504f49f305838290c61c735c693d01df43b2",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "23593fefae1bef47da8272ed1a4b09a18883bac252a029f4e61d8361943cfaee",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "48665d35b3a1a22d580712c10c7b3e5b01e242a38991e59f20be057f22505f78",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        }
+      ],
+      "supplementary": null
+    },
+    {
+      "meeting_id": "synthetic-2",
+      "candidate_fingerprint": "f584d29113a4e4aabb95bce5ed0f0f7bb57c1c6343c67c3feb48de9bf44b661c",
+      "source_fingerprint": "6a61210cf362969335685799a124f0210643eb30b556a0efe7d0ffd6939140cf",
+      "template_fingerprint": "43fe3feb96f82209fbb588c708b372fa6825cc3488de672058d55ae4f27ad87b",
+      "human_final_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+      "reviewer": "合成评分人乙",
+      "author": "合成撰写人甲",
+      "reviewed_at": "2026-01-01T00:00:00Z",
+      "author_blind_to_candidate": true,
+      "required_elements": [
+        "title",
+        "topics"
+      ],
+      "element_presence": {
+        "title": false,
+        "topics": true
+      },
+      "human_topic_ids": [
+        "human-topic-1"
+      ],
+      "topic_matches": [
+        {
+          "human_id": "human-topic-1",
+          "candidate_id": "topics[0]",
+          "evidence": "candidate.json#/minutes/topics/0"
+        }
+      ],
+      "human_resolution_ids": [
+        "human-resolution-1"
+      ],
+      "resolution_matches": [
+        {
+          "human_id": "human-resolution-1",
+          "candidate_id": "topics[0].resolutions[0]",
+          "evidence": "candidate.json#/minutes/topics/0/resolutions/0"
+        }
+      ],
+      "statements": [
+        {
+          "id": "s1",
+          "candidate_location": "candidate.json#/minutes/topics/0/discussion",
+          "source_locations": [
+            "synthetic-2.segments.json#seg-1"
+          ],
+          "supported": true,
+          "reason": "SYNTHETIC 人为编排的格式向量，不是真实判卷"
+        },
+        {
+          "id": "s2",
+          "candidate_location": "candidate.json#/minutes/topics/0/resolutions/0",
+          "source_locations": [
+            "synthetic-2.segments.json#seg-2"
+          ],
+          "supported": true,
+          "reason": "SYNTHETIC 人为编排的格式向量，不是真实判卷"
+        },
+        {
+          "id": "s3",
+          "candidate_location": "candidate.json#/minutes/topics/0/pending_decisions/0",
+          "source_locations": [
+            "synthetic-2.segments.json#seg-3"
+          ],
+          "supported": true,
+          "reason": "SYNTHETIC 人为编排的格式向量，不是真实判卷"
+        }
+      ],
+      "statements_coverage_complete": true,
+      "statement_exclusion_policy": "合成格式向量仅列三项正文；标题、编号、元信息不计入此向量",
+      "structure_compliant": false,
+      "structure_evidence": "合成向量：元信息缺失需人工补充",
+      "divergences": [],
+      "divergences_review_complete": true,
+      "issue_reviews": [
+        {
+          "issue_id": "a500265725677291963c741789a9416756af353d06be79f9b85d42b0028afc35",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "e70cb5bdc024f9728a3bdcd3d9b476e6bf34e0b8c396e741cc9cc38860c25182",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "74abb98a0fe57ab9dfb07ad4c86ce4ff8eefc7a962d574b11dbf5ffcc0c2ee6a",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "ba9c291915551840b9960dd0bd893837cca518dc09b9c761d4443588622eb22f",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "58788d2b980ca9f7dd639569cd8c4396732c1c6d050d74fd1c4e5cfadb6e6bc0",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "1096c37cd72bfc8f5a04e669c0a904d4054dd4f1de3c7c7a202113858f5bb98c",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "6468aacb930a8e1990f94ef64cca83b5d05501bbe7df1fad683653872dee8e61",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "82367cc2b3a018aac3352f982b89065542ffdfd925f74e776fcdfac1ded95d48",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": false
+        },
+        {
+          "issue_id": "5d8b4efc9e22b67524754ede522e990abc1375a7daf385eedba8d545d85d56af",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "b4e7034ca3c78f7f4ff9574e6ed58e7d106a76c2663ebf977dc0518f12dcdb03",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "d72170a4053c5e8fd014b6fde9c54208fa232d9d7b4c2a52444a1a06394b8fb9",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "7fcee48fee8cfe137f965951fe72b83745b3f065931725a4e09e3d6b2b18dec6",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "47a7e5d3ed03e052403881188584504f49f305838290c61c735c693d01df43b2",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "23593fefae1bef47da8272ed1a4b09a18883bac252a029f4e61d8361943cfaee",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        },
+        {
+          "issue_id": "48665d35b3a1a22d580712c10c7b3e5b01e242a38991e59f20be057f22505f78",
+          "verdict": "true_positive",
+          "reason": "合成标签，仅用于格式验证",
+          "false_downgrade": null
+        }
+      ],
+      "supplementary": null
+    }
+  ]
+}

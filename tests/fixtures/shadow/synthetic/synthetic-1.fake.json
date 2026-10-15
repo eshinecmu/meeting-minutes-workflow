@@ -1,0 +1,8 @@
+{
+  "labels": [
+    "SYNTHETIC / 合成数据，非真实验收结果"
+  ],
+  "script": [
+    "{\"topics\": [{\"name\": \"合成方案\", \"discussion\": \"研究合成方案。\", \"resolutions\": [{\"content\": \"决定按合成计划实施。\", \"source_quote\": \"决定按合成计划实施。\", \"source_start_ms\": 30000, \"source_end_ms\": null}], \"action_items\": [{\"content\": \"下周完成合成材料核对。\", \"owner\": \"合成人甲\", \"deadline\": \"下周\", \"source_quote\": \"下周完成合成材料核对。\", \"source_start_ms\": 45000, \"source_end_ms\": null}]}]}"
+  ]
+}

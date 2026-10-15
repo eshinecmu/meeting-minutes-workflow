@@ -1,0 +1,25 @@
+{
+  "format_version": 1,
+  "required_elements_min": 0.95,
+  "topic_recall_min": 0.9,
+  "resolution_recall_min": 0.85,
+  "ungrounded_max": 0,
+  "structure_min": 1,
+  "agreement": {
+    "id": "SYNTHETIC-ONLY",
+    "date": "SYNTHETIC",
+    "owner": "合成人",
+    "confirmed": false,
+    "required_elements": [
+      "title",
+      "topics"
+    ],
+    "meeting_kinds": [
+      "party_group",
+      "special_topic",
+      "coordination",
+      "regular_meeting"
+    ],
+    "long_meeting_boundary_seconds": 3600
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "batch_id": null,
+  "dataset_kind": null,
+  "labels": [
+    "影子生成，禁止交付"
+  ],
+  "scores": [
+    {
+      "meeting_id": null,
+      "candidate_fingerprint": null,
+      "source_fingerprint": null,
+      "template_fingerprint": null,
+      "human_final_fingerprint": null,
+      "reviewer": null,
+      "author": null,
+      "reviewed_at": null,
+      "author_blind_to_candidate": null,
+      "required_elements": null,
+      "element_presence": null,
+      "human_topic_ids": null,
+      "topic_matches": null,
+      "human_resolution_ids": null,
+      "resolution_matches": null,
+      "statements": null,
+      "statements_coverage_complete": null,
+      "statement_exclusion_policy": null,
+      "structure_compliant": null,
+      "structure_evidence": null,
+      "divergences": null,
+      "divergences_review_complete": null,
+      "issue_reviews": null,
+      "supplementary": null
+    }
+  ]
+}

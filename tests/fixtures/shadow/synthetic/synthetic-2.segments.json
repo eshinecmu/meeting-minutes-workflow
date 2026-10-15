@@ -1,0 +1,23 @@
+[
+  {
+    "seq": 1,
+    "text": "研究合成方案。",
+    "speaker": "合成人甲",
+    "start_ms": 12000,
+    "end_ms": null
+  },
+  {
+    "seq": 2,
+    "text": "决定按合成计划实施。",
+    "speaker": "合成人乙",
+    "start_ms": 30000,
+    "end_ms": null
+  },
+  {
+    "seq": 3,
+    "text": "下周完成合成材料核对。",
+    "speaker": "合成人甲",
+    "start_ms": 45000,
+    "end_ms": null
+  }
+]

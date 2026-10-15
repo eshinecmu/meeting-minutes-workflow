@@ -1,0 +1,60 @@
+{
+  "format_version": 1,
+  "batch_id": "synthetic-e3",
+  "dataset_kind": "synthetic",
+  "labels": [
+    "SYNTHETIC / 合成数据，非真实验收结果"
+  ],
+  "long_meeting_boundary_seconds": 3600,
+  "meetings": [
+    {
+      "meeting_id": "synthetic-1",
+      "name": "合成会议 1，非真实会议",
+      "meeting_kind": "regular_meeting",
+      "duration_seconds": 600,
+      "record_path": "synthetic-1.record.md",
+      "segments_path": "synthetic-1.segments.json",
+      "template_snapshot_path": "synthetic-1.template.json",
+      "fake_response_path": "synthetic-1.fake.json",
+      "source_version": "SYNTHETIC-v1",
+      "meeting_meta": {
+        "title": "合成会议1纪要",
+        "meeting_time": "合成时间",
+        "location": "合成地点",
+        "host": "合成人甲",
+        "attendees": [
+          "合成人甲",
+          "合成人乙"
+        ],
+        "recorder": "合成人乙"
+      }
+    },
+    {
+      "meeting_id": "synthetic-2",
+      "name": "合成会议 2，非真实会议",
+      "meeting_kind": "party_group",
+      "duration_seconds": 7200,
+      "record_path": "synthetic-2.record.md",
+      "segments_path": "synthetic-2.segments.json",
+      "template_snapshot_path": "synthetic-2.template.json",
+      "fake_response_path": "synthetic-2.fake.json",
+      "source_version": "SYNTHETIC-v1",
+      "meeting_meta": {
+        "title": "合成会议2纪要",
+        "meeting_time": "合成时间",
+        "location": "合成地点",
+        "host": "合成人甲",
+        "attendees": [
+          "合成人甲",
+          "合成人乙"
+        ],
+        "recorder": "合成人乙"
+      }
+    }
+  ],
+  "model_config": {
+    "extraction": {
+      "engine": "llm"
+    }
+  }
+}
