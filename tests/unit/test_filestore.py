@@ -502,3 +502,61 @@ def test_two_meetings_are_isolated(data_root: Path):
     assert a.read("audio/x.m4a") == b"AAA" * 100
     assert b.read("audio/x.m4a") == b"BBB" * 100
     assert len(a.manifest()) == 1 and len(b.manifest()) == 1
+
+
+@pytest.mark.parametrize('existing', [False, True], ids=['first-write', 'overwrite'])
+@pytest.mark.parametrize('fault', ['partial-write', 'install', 'manifest'])
+def test_failed_write_preserves_prior_files_and_manifest(store, monkeypatch, existing, fault):
+    """Partial writes, failed atomic install and post-install errors roll back.
+
+    A first write leaves no dst; an overwrite preserves the original ciphertext
+    and hashes. Before installation dst still exists (no rename-away kill window).
+    """
+    store.write_text('record/other.md', '不相关的已有产物')
+    rel = 'record/v1.md'
+    if existing:
+        store.write_text(rel, '旧记录稿')
+    dst = store.resolve(rel)
+    original = dst.read_bytes() if existing else None
+    manifest = store.manifest_path.read_bytes()
+    observed = []
+    write_bytes, replace = Path.write_bytes, Path.replace
+
+    def partial_write(path, data):
+        if path.parent == dst.parent and path.suffix == '.tmp':
+            write_bytes(path, b'partial')
+            observed.append('partial-write')
+            raise OSError('injected partial write')
+        return write_bytes(path, data)
+
+    def failed_install(path, target):
+        if Path(target) == dst and not path.name.endswith('.backup.tmp'):
+            assert dst.exists() == existing
+            if existing:
+                assert dst.read_bytes() == original
+            observed.append('install')
+            raise OSError('injected install failure')
+        return replace(path, target)
+
+    def failed_manifest(entry):
+        assert store.read_text(rel) == '新记录稿', 'fault must occur after installation'
+        observed.append('manifest')
+        raise OSError('injected manifest failure')
+
+    if fault == 'partial-write':
+        monkeypatch.setattr(Path, 'write_bytes', partial_write)
+    elif fault == 'install':
+        monkeypatch.setattr(Path, 'replace', failed_install)
+    else:
+        monkeypatch.setattr(store, '_append_manifest', failed_manifest)
+    with pytest.raises(OSError, match='injected'):
+        store.write_text(rel, '新记录稿')
+    assert observed == [fault]
+    assert dst.exists() == existing
+    if existing:
+        assert dst.read_bytes() == original
+        assert store.read_text(rel) == '旧记录稿'
+    assert store.read_text('record/other.md') == '不相关的已有产物'
+    assert store.manifest_path.read_bytes() == manifest
+    assert store.verify_manifest() == []
+    assert list(store.store_root.rglob('*.tmp')) == []

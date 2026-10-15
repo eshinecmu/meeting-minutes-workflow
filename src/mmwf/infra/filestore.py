@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import tempfile
 from collections.abc import Iterator
@@ -204,13 +205,11 @@ class FileStore:
         if encrypted:
             assert self._cipher is not None
             blob = self._cipher.encrypt_bytes(data)
-            dst.write_bytes(blob)
             disk_digest = sha256_bytes(blob)
         else:
-            dst.write_bytes(data)
+            blob = data
             disk_digest = plain_digest
 
-        stat = dst.stat()
         entry = ManifestEntry(
             path=rel_path,
             sha256=disk_digest,
@@ -218,9 +217,35 @@ class FileStore:
             stage=stage or (Path(rel_path).parts[0] if Path(rel_path).parts else "unknown"),
             plain_sha256=plain_digest,
             encrypted=encrypted,
-            size_bytes=stat.st_size,
+            size_bytes=len(blob),
         )
-        self._append_manifest(entry)
+        # Stage before replacing: ENOSPC may occur after a partial write. Keep
+        # the old inode until the atomic manifest update has also succeeded.
+        # A hard link keeps dst present until staged.replace(dst); renaming dst
+        # away would leave it missing if killed between the two renames.
+        # File + manifest are not a crash-atomic pair: a kill after installation
+        # can leave the old manifest and a backup requiring recovery/rebuild.
+        fd, name = tempfile.mkstemp(dir=dst.parent, suffix=".tmp")
+        os.close(fd)
+        staged = Path(name)
+        backup = staged.with_suffix(".backup.tmp")
+        installed = False
+        try:
+            staged.write_bytes(blob)
+            if dst.exists():
+                backup.hardlink_to(dst)
+            staged.replace(dst)
+            installed = True
+            self._append_manifest(entry)
+        except BaseException:
+            if backup.exists():
+                backup.replace(dst)
+            elif installed:
+                dst.unlink(missing_ok=True)
+            raise
+        finally:
+            staged.unlink(missing_ok=True)
+            backup.unlink(missing_ok=True)
 
         return StoredFile(
             rel_path=rel_path,
@@ -228,7 +253,7 @@ class FileStore:
             sha256=disk_digest,
             plain_sha256=plain_digest,
             encrypted=encrypted,
-            size_bytes=stat.st_size,
+            size_bytes=len(blob),
         )
 
     def write_text(self, rel_path: str, text: str, *, stage: Stage | str | None = None,
@@ -339,10 +364,13 @@ class FileStore:
         }
         # 原子写：先写 .tmp 再 replace，避免断电留下半个 JSON
         tmp = self.manifest_path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        tmp.replace(self.manifest_path)
+        try:
+            tmp.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            tmp.replace(self.manifest_path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     def rebuild_manifest(self) -> list[ManifestEntry]:
         """扫描目录重建 manifest（施工卡容错验收第 4 条）。
