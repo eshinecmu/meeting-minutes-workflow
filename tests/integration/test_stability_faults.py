@@ -347,7 +347,10 @@ def model_load_failure(api, monkeypatch):
         assert 'PRIVATE_MODEL_LOAD_FAILURE' not in json.dumps(body)
         assert body['trace_id']
         # Same action remains usable after the environment is repaired.
-        provider._model = SimpleNamespace(generate=lambda **_: [{'text': TEXT, 'timestamp': [[0, 1000]]}])
+        # FunASR's timestamp array is paired with characters by the adapter;
+        # a single pair for this whole sentence is a DR-02 mismatch, not recovery.
+        provider._model = SimpleNamespace(generate=lambda **_: [{
+            'text': TEXT, 'timestamp': [[i * 100, (i + 1) * 100] for i in range(len(TEXT))]}])
         retried = api.client.post(f'/api/v1/meetings/{api.mid}/start').json()
         assert retried['ok'], retried
         assert retried['data']['pending_gate']['gate'] == 'G2'

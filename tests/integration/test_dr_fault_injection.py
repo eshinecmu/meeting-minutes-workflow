@@ -148,20 +148,37 @@ def test_bad_schema_retries_twice_and_renders_issue_list(env, monkeypatch):
         assert failures[0]["message"] in restored.values()["minutes_markdown"]
 
 
-def test_word_lock_reports_e5004_and_succeeds_after_release(env, monkeypatch):
+@pytest.mark.parametrize("existing", [False, True], ids=["first-write", "overwrite"])
+def test_word_lock_reports_e5004_and_succeeds_after_release(env, monkeypatch, existing):
     service = ExportService(env.store, db_path=env.db)
-    write_bytes = Path.write_bytes
-    def locked(path, *args, **kwargs):
-        if path.suffix == ".docx":
+    # Word locks the destination, not the staging file. An older export must
+    # survive a failed atomic replacement unchanged, including its manifest.
+    if existing:
+        old = service.export_docx(installed_fonts=FONTS)
+        env.store.write_text("record/v1.md", RECORD + "\n补充议题。", stage="record")
+        old_bytes = env.store.resolve(old.rel_path).read_bytes()
+    manifest = env.store.manifest_path.read_bytes()
+    replace = Path.replace
+    attempted = []
+    def locked(path, target):
+        if Path(target).suffix == ".docx":
+            attempted.append(Path(target))
             raise PermissionError("injected Word lock")
-        return write_bytes(path, *args, **kwargs)
+        return replace(path, target)
     with monkeypatch.context() as patch:
-        patch.setattr(Path, "write_bytes", locked)
+        patch.setattr(Path, "replace", locked)
         with pytest.raises(MmwfError) as caught:
             service.export_docx(installed_fonts=FONTS)
     assert caught.value.code == "E5004"
     assert "关闭" in caught.value.user_message and "重试" in caught.value.user_message
-    assert not list(env.store.resolve("export").glob("*.docx"))
+    assert len(attempted) == 1  # no redundant restore against the locked target
+    if existing:
+        assert env.store.resolve(old.rel_path).read_bytes() == old_bytes
+    else:
+        assert not list(env.store.resolve("export").glob("*.docx"))
+    assert env.store.manifest_path.read_bytes() == manifest
+    assert env.store.verify_manifest() == []
+    assert not list(env.store.store_root.rglob("*.tmp"))
     result = service.export_docx(installed_fonts=FONTS)
     assert env.store.exists(result.rel_path)
     assert service.export_docx(installed_fonts=FONTS).reused

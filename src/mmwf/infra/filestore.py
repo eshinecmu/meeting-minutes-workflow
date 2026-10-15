@@ -238,7 +238,10 @@ class FileStore:
             installed = True
             self._append_manifest(entry)
         except BaseException:
-            if backup.exists():
+            # A failed replace (e.g. Word holding dst open on Windows) leaves
+            # dst intact. Trying to restore then would hit the same lock and
+            # mask the original error. Roll back only after installation.
+            if installed and backup.exists():
                 backup.replace(dst)
             elif installed:
                 dst.unlink(missing_ok=True)
