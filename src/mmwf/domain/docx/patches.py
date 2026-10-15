@@ -46,7 +46,12 @@ GB/T 9704 要求"首行缩进 2 字符"，指的是**字符**，不是固定磅�
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
+
+if TYPE_CHECKING:
+    from mmwf.domain.docx._docx_backend import (
+        _Document, _Element, _Paragraph, _Row, _Run, _Section, _Table,
+    )
 
 from mmwf.domain.docx._docx_backend import (
     Cm,
@@ -81,7 +86,7 @@ TABLE_EDGES: tuple[str, ...] = ("top", "left", "bottom", "right", "insideH", "in
 # ---------------------------------------------------------------------------
 
 def set_cjk_font(
-    run,
+    run: _Run,
     font_name: str,
     size_pt: float | None = None,
     bold: bool | None = None,
@@ -130,7 +135,7 @@ def set_cjk_font(
 # 缩进
 # ---------------------------------------------------------------------------
 
-def _get_or_add_ind(paragraph):
+def _get_or_add_ind(paragraph: _Paragraph) -> _Element:
     """取（或新建）该段落的 `w:ind` 元素。"""
     ppr = paragraph._p.get_or_add_pPr()
     ind = ppr.find(qn("w:ind"))
@@ -140,7 +145,7 @@ def _get_or_add_ind(paragraph):
     return ind
 
 
-def set_first_line_indent_chars(paragraph, chars: int) -> None:
+def set_first_line_indent_chars(paragraph: _Paragraph, chars: int) -> None:
     """首行缩进 N 字符（用 `w:firstLineChars`，随字号自适应）。
 
     `chars=0` 时**不删** `w:ind`，而是把八个属性全写 0 ——
@@ -156,7 +161,7 @@ def set_first_line_indent_chars(paragraph, chars: int) -> None:
     # `w:firstLine` 保持 "0"：两套属性同时在时以 Chars 为准（事实 ②）
 
 
-def zero_indent(paragraph) -> None:
+def zero_indent(paragraph: _Paragraph) -> None:
     """段落缩进八项全清零。表格内段落与表头专用（事实 ③、C15）。"""
     set_first_line_indent_chars(paragraph, 0)
 
@@ -165,7 +170,7 @@ def zero_indent(paragraph) -> None:
 # ★ 表格缩进穿透修复（C15，本卡最高频的坑）
 # ---------------------------------------------------------------------------
 
-def fix_table_indent_penetration(table) -> int:
+def fix_table_indent_penetration(table: _Table) -> int:
     """修复表格段落被正文缩进穿透。返回处理过的段落数。
 
     **根因**：段落缩进是**段落属性**（`w:pPr/w:ind`），而 Word 里
@@ -205,7 +210,7 @@ def fix_table_indent_penetration(table) -> int:
     return touched
 
 
-def set_table_full_borders(table, *, sz: int = 4, color: str = "000000") -> None:
+def set_table_full_borders(table: _Table, *, sz: int = 4, color: str = "000000") -> None:
     """表格全边框（六个边齐全）。
 
     `sz` 单位是 1/8 pt，所以 4 = 0.5 pt。GB/T 9704 对表格线宽没有
@@ -231,7 +236,7 @@ def set_table_full_borders(table, *, sz: int = 4, color: str = "000000") -> None
     tbl_pr.append(borders)
 
 
-def repeat_header_row(row) -> None:
+def repeat_header_row(row: _Row) -> None:
     """把某一行设为"跨页时重复的表头行"。
 
     公文表格跨页是常态（参会人员表、议定事项表都可能超过一页）。
@@ -247,7 +252,7 @@ def repeat_header_row(row) -> None:
 # 行距与对齐
 # ---------------------------------------------------------------------------
 
-def set_fixed_line_spacing(paragraph, pt: float) -> None:
+def set_fixed_line_spacing(paragraph: _Paragraph, pt: float) -> None:
     """固定值行距（公文体常用 28.8 磅）。
 
     必须是**固定值**（`w:lineRule="exact"`）而不能是"多倍行距"：
@@ -259,7 +264,7 @@ def set_fixed_line_spacing(paragraph, pt: float) -> None:
     pf.line_spacing = Pt(pt)
 
 
-def set_alignment(paragraph, align: str) -> None:
+def set_alignment(paragraph: _Paragraph, align: str) -> None:
     """按 `GBStyle.align` 的字符串设对齐。
 
     映射写成显式字典而不是 `getattr(WD_ALIGN_PARAGRAPH, align.upper())`：
@@ -283,7 +288,7 @@ def set_alignment(paragraph, align: str) -> None:
 # 分栏 / 表格整体属性（备用，供后续卡使用）
 # ---------------------------------------------------------------------------
 
-def remove_table_left_indent(table) -> None:
+def remove_table_left_indent(table: _Table) -> None:
     """清掉表格整体相对页边的缩进（`w:tblInd`）。
 
     与"单元格内段落缩进"是两回事，但症状相似（表格看起来没对齐）。
@@ -299,7 +304,7 @@ def remove_table_left_indent(table) -> None:
     tbl_pr.append(ind)
 
 
-def set_cell_margins(table, *, top: int = 28, start: int = 85,
+def set_cell_margins(table: _Table, *, top: int = 28, start: int = 85,
                      bottom: int = 28, end: int = 85) -> None:
     """设置单元格内边距（单位 twips）。
 
@@ -322,7 +327,7 @@ def set_cell_margins(table, *, top: int = 28, start: int = 85,
     tbl_pr.append(mar)
 
 
-def set_page_margins(section, *, top_cm: float = 3.7, bottom_cm: float = 3.5,
+def set_page_margins(section: _Section, *, top_cm: float = 3.7, bottom_cm: float = 3.5,
                      left_cm: float = 2.8, right_cm: float = 2.6) -> None:
     """GB/T 9704 版心：A4 纸天头 37mm、地脚 35mm、订口 28mm、切口 26mm。
 
@@ -335,7 +340,7 @@ def set_page_margins(section, *, top_cm: float = 3.7, bottom_cm: float = 3.5,
     section.right_margin = Cm(right_cm)
 
 
-def add_page_number_field(paragraph, *, font_name: str = "宋体",
+def add_page_number_field(paragraph: _Paragraph, *, font_name: str = "宋体",
                           size_pt: float = 14) -> None:
     """在段落里插入 `PAGE` 域（页码）。
 
@@ -366,7 +371,7 @@ def add_page_number_field(paragraph, *, font_name: str = "宋体",
     set_cjk_font(run, font_name, size_pt, latin_font=font_name)
 
 
-def iter_paragraphs_in_tables(doc) -> Iterable:
+def iter_paragraphs_in_tables(doc: _Document) -> Iterable[_Paragraph]:
     """遍历文档中所有表格里的所有段落（供 verify 脚本与测试用）。"""
     for table in doc.tables:
         for row in table.rows:

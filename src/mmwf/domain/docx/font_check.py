@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
-from mmwf.domain.docx.style_mapper import FONT_FALLBACK, GB_STYLES
+from mmwf.domain.docx.style_mapper import FONT_FALLBACK, GB_STYLES, GBStyle
 
 #: 三个策略档位（config/models.yaml `font_fallback_policy`）。
 POLICY_WARN = "warn"
@@ -129,7 +129,7 @@ class FontReport:
             return f"字体预检通过（{len(self.checks)} 项全部就绪）"
         return f"字体预检：缺失 {len(self.missing)} 项 —— {'、'.join(self.missing)}"
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "policy": self.policy,
             "precheck_available": self.precheck_available,
@@ -232,7 +232,7 @@ def is_installed(font_name: str, installed: set[str] | None = None) -> bool:
 # 预检
 # ---------------------------------------------------------------------------
 
-def required_fonts(styles: Mapping | None = None) -> tuple[str, ...]:
+def required_fonts(styles: Mapping[str, GBStyle] | None = None) -> tuple[str, ...]:
     """导出一次公文需要哪些字体（按 `GB_STYLES` 去重、保持出现顺序）。
 
     顺序有意义：标题字体排最前 —— 报告里先看到的是"最要紧的那个缺了"。
@@ -353,7 +353,7 @@ def precheck_policy_error(report: FontReport) -> str:
     )
 
 
-def build_check_result_json(report: FontReport) -> dict:
+def build_check_result_json(report: FontReport) -> dict[str, object]:
     """给 `GET /system/fonts` 用的响应体（SAD §8.1）。"""
     return {
         "available": report.precheck_available,

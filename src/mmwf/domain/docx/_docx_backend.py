@@ -42,13 +42,27 @@ OOXML 补丁必须走它们，否则就得手写 XML 字符串，那才是真的
 
 from __future__ import annotations
 
+from os import PathLike
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查器
-    from docx.document import Document as _Document
-    from docx.table import Table as _Table
-    from docx.text.paragraph import Paragraph as _Paragraph
-    from docx.text.run import Run as _Run
+    from lxml.etree import _Element as _Element
+
+    from docx import document, section, shared, table
+    from docx.enum.text import WD_ALIGN_PARAGRAPH as _WD_ALIGN_PARAGRAPH
+    from docx.enum.text import WD_LINE_SPACING as _WD_LINE_SPACING
+    from docx.text import paragraph, run
+
+    # Type aliases stay behind this backend so callers never import docx directly.
+    _Document = document.Document
+    _Section = section.Section
+    _Pt = shared.Pt
+    _Cm = shared.Cm
+    _Table = table.Table
+    _Row = table._Row
+    _Paragraph = paragraph.Paragraph
+    _Run = run.Run
 
 
 class DocxBackendError(RuntimeError):
@@ -68,7 +82,7 @@ _INSTALL_HINT = (
 )
 
 
-def _require_docx():
+def _require_docx() -> ModuleType:
     """惰性导入 python-docx，失败时给可执行的提示。"""
     try:
         import docx  # noqa: F401
@@ -83,7 +97,7 @@ def _require_docx():
 # 对外暴露的构造入口（其余模块只用这些，不直接 import docx）
 # ---------------------------------------------------------------------------
 
-def new_document():
+def new_document() -> _Document:
     """新建一个空白 Document。
 
     **刻意不用 python-docx 的 `default.docx` 模板**。
@@ -107,7 +121,7 @@ def new_document():
     return doc
 
 
-def _strip_default_styles(doc) -> None:
+def _strip_default_styles(doc: _Document) -> None:
     """清掉自带样式的字体设定，避免与 GB 注入的字体打架。
 
     只清字体与缩进这两个会和 GB 版式正面冲突的属性，
@@ -129,7 +143,7 @@ def _strip_default_styles(doc) -> None:
             rpr.remove(rfonts)
 
 
-def open_document(path) -> "_Document":
+def open_document(path: str | PathLike[str]) -> "_Document":
     """打开一个已有 docx（用于对照校验与回归）。"""
     _require_docx()
     from docx import Document
@@ -145,7 +159,7 @@ def qn(tag: str) -> str:
     return _qn(tag)
 
 
-def OxmlElement(tag: str):
+def OxmlElement(tag: str) -> _Element:
     """新建一个 OOXML 元素。"""
     _require_docx()
     from docx.oxml import OxmlElement as _OxmlElement
@@ -162,7 +176,7 @@ def OxmlElement(tag: str):
 # "换库只改一个文件"的承诺就当场失效。验收脚本（附加 5）用 AST 查的
 # 正是这件事 —— 靠字符串匹配查不出来，因为这类 import 都写在函数体里。
 
-def Pt(value: float):
+def Pt(value: float) -> _Pt:
     """磅 -> python-docx 的 EMU 长度对象。"""
     _require_docx()
     from docx.shared import Pt as _Pt
@@ -170,7 +184,7 @@ def Pt(value: float):
     return _Pt(value)
 
 
-def Cm(value: float):
+def Cm(value: float) -> _Cm:
     """厘米 -> python-docx 的 EMU 长度对象（页面边距用）。"""
     _require_docx()
     from docx.shared import Cm as _Cm
@@ -178,7 +192,7 @@ def Cm(value: float):
     return _Cm(value)
 
 
-def WD_ALIGN_PARAGRAPH():
+def WD_ALIGN_PARAGRAPH() -> type[_WD_ALIGN_PARAGRAPH]:
     """段落对齐枚举（`WD_ALIGN_PARAGRAPH`）。
 
     返回枚举类本身而不是某个成员：调用方要按 `GBStyle.align`
@@ -190,7 +204,7 @@ def WD_ALIGN_PARAGRAPH():
     return _WAP
 
 
-def WD_LINE_SPACING():
+def WD_LINE_SPACING() -> type[_WD_LINE_SPACING]:
     """行距规则枚举（`WD_LINE_SPACING`）。"""
     _require_docx()
     from docx.enum.text import WD_LINE_SPACING as _WLS
@@ -217,7 +231,7 @@ def xml_escape_safe() -> None:  # pragma: no cover - 占位，说明性函数
 DETERMINISTIC_ZIP_DATETIME = (1980, 1, 1, 0, 0, 0)
 
 
-def save_bytes(doc) -> bytes:
+def save_bytes(doc: _Document) -> bytes:
     """把 `Document` 序列化成 bytes，且**结果可复现**（T1-09/T1-10）。
 
     为什么不能直接用 `doc.save(buf)`
