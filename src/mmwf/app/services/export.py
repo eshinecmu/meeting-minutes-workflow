@@ -57,6 +57,7 @@ SAD §6 / 施工卡：`.doc` 走 LibreOffice 无头模式转换，
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import logging
 import shutil
@@ -399,10 +400,7 @@ class ExportService:
         if reused:
             stored = self._stored_of(rel_path)
         else:
-            try:
-                stored = self.store.write(rel_path, payload, stage="export")
-            except PermissionError as exc:
-                raise MmwfError(code="E5004", detail="导出目标文件无法写入") from exc
+            stored = self._write_export(rel_path, payload)
 
         warnings = list(rendered.warnings)
 
@@ -487,7 +485,7 @@ class ExportService:
         # 手动登记进 manifest（LO 自己不会写我们的 manifest）
         rel = f"{EXPORT_AREA}/{produced.name}"
         data = produced.read_bytes()
-        self.store.write(rel, data, stage="export")
+        self._write_export(rel, data)
         return DocConversion(status=DOC_STATUS_OK, rel_path=rel)
 
     # --- 撤销导出（F5.8） -----------------------------------------------
@@ -513,6 +511,17 @@ class ExportService:
         return existed
 
     # --- 内部工具 -------------------------------------------------------
+
+    def _write_export(self, rel_path: str, payload: bytes) -> StoredFile:
+        try:
+            return self.store.write(rel_path, payload, stage="export")
+        except PermissionError as exc:
+            raise MmwfError(code="E5004", detail="导出目标文件无法写入") from exc
+        except OSError as exc:
+            # 满盘保留系统错误语义，交给上层统一转换 E9002。
+            if exc.errno == errno.ENOSPC:
+                raise
+            raise MmwfError(code="E5003", detail="导出文件写入失败") from exc
 
     def _existing_plain_sha(self, rel_path: str) -> str | None:
         for entry in self.store.manifest():

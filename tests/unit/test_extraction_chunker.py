@@ -201,3 +201,16 @@ def test_estimated_silence_clamps_to_zero():
     segments, report = segmentize("[00:00] 张三：甲乙丙丁戊\n[00:01] 张三：乙")
     assert segments[0].gap_after_ms == 0
     assert report.estimated_gaps == 1
+
+
+@pytest.mark.parametrize("boundary", ["speaker", "turn", "silence"])
+@pytest.mark.parametrize("size,cut", [(999, False), (1000, True)])
+def test_semantic_boundary_respects_minimum_size(boundary, size, cut):
+    # 裁决：03 的 U-EX-01～03 与 U-EX-04 同时成立；仅在达到块大小目标后必切。
+    # 使用允许的最小目标 1000，避免把早期语义边界解释为强制碎片化。
+    first = Segment(1, "甲" * size, speaker="张三",
+                    gap_after_ms=1501 if boundary == "silence" else None)
+    second = Segment(2, "下面我们看第二个议题" if boundary == "turn" else "乙",
+                     speaker="李四" if boundary == "speaker" else "张三")
+    chunks = chunk_segments([first, second], target_chars=1000, overlap_chars=0)
+    assert [c.segments for c in chunks] == ([(first,), (second,)] if cut else [(first, second)])

@@ -1002,3 +1002,184 @@ def test_post_invoke_blocked_error_does_not_rewrite_checkpoint(monkeypatch):
     app.update_state.assert_not_called()
     values.assert_called_once_with()
     touch.assert_called_once_with(S.STATUS_FAILED, last_error=GroundingBlockedError().user_message)
+
+
+def test_full_node_and_status_sequence(tmp_path, monkeypatch):
+    """U-ST-01：记录真实调度次序（包括闸口恢复重放），不只检查次数。"""
+    runs = harness.Runs()
+    seen = []
+    node_statuses = ["created"]
+    original = runs.bump
+
+    def observe(name):
+        seen.append(name)
+        node_statuses.append(B.task_state_of(name))
+        original(name)
+
+    monkeypatch.setattr(runs, "bump", observe)
+    app = harness.build_test_app(runs=runs, real=())
+    with GraphRunner("sequence", app=app) as r:
+        statuses = [r.status().status]
+        statuses.append(r.start().status)
+        statuses.append(r.resume({"decision": "approve"}).status)
+        statuses.append(r.resume({"decision": "approve"}).status)
+    assert statuses == ["created", "G2_awaiting", "G3_awaiting", "archived"]
+    assert seen == ["ingest", "transcribe", "review", "extract", "gate_g2",
+                    "gate_g2", "generate", "validate", "assemble", "gate_g3",
+                    "gate_g3", "export", "archive"]
+    assert node_statuses == [
+        "created", "ingest_pending", "transcribing", "reviewing", "extracting", "G2_awaiting",
+        "G2_awaiting", "generating", "validating", "assembling", "G3_awaiting",
+        "G3_awaiting", "exporting", "archived",
+    ]
+
+
+def test_checkpoint_restores_every_state_field(tmp_path):
+    """U-ST-07：关闭并重开 SQLite 后逐字段相等，包括问题、重试和内部路由。"""
+    from mmwf.graph.build import make_checkpointer
+
+    seed = {
+        "task_id": "task-restore", "operator": "测试员", "audio_paths": ["audio/a.wav"],
+        "chunk_plan": [{"seq": 1, "start_ms": 0, "end_ms": 1000}],
+        "review_result": {"accepted": [1]}, "minutes": {"title": "原料"},
+        "issues": [{"code": "OWNER_DEFAULTED", "blocking": False}],
+        "pending_decisions": [{"content": "待核对"}], "gen_retry": 2,
+        "errors": [{"code": "E5002", "node_id": "fixture"}],
+        "idem_keys": {"export": "stable"}, "export_paths": {},
+        "_gate_rejects": 1,
+    }
+    path = tmp_path / "restore.db"
+    saver = make_checkpointer(path)
+    try:
+        app = harness.build_test_app(runs=harness.Runs(), real=(), checkpointer=saver)
+        with GraphRunner("restore", app=app) as r:
+            r.start(seed)
+            r.resume({"decision": "approve"})
+            before = r.values()
+            gate = r.status().pending_gate.to_dict()
+            assert set(before) == set(S.PipelineState.__annotations__)
+    finally:
+        saver.conn.close()
+    saver = make_checkpointer(path)
+    try:
+        runs = harness.Runs()
+        app = harness.build_test_app(runs=runs, real=(), checkpointer=saver)
+        with GraphRunner("restore", app=app) as restored:
+            assert restored.values() == before
+            assert restored.status().pending_gate.to_dict() == gate
+            assert runs.n == {}
+            restored.resume({"decision": "approve"})
+            assert restored.status().status == "archived"
+            assert all(runs.get(n) == 0 for n in ("ingest", "transcribe", "review", "extract", "generate"))
+    finally:
+        saver.conn.close()
+
+
+@pytest.mark.parametrize("gate", ["G2", "G3"])
+@pytest.mark.parametrize("decision", ["approve", "edit", "reject"])
+def test_gate_interrupt_and_replay_have_no_disk_or_audit_delta(tmp_path, monkeypatch, request, gate, decision):
+    """U-ST-09：隔离真实 gate，实际目录与审计表在中断及重放后均无增量。"""
+    from langgraph.graph import START, END, StateGraph
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.types import Command
+    from mmwf.graph.interrupts import make_gate
+    from mmwf.infra.audit import AuditLogger, query
+    from mmwf.infra.migrations.runner import migrate
+
+    db = tmp_path / "audit.db"
+    migrate(db)
+    audit = AuditLogger(db)
+    audit.log(operator="tester", action="selfcheck", detail={"phase": "before"})
+    (tmp_path / "record.md").write_text("已完成产物", encoding="utf-8")
+    # 保持观察连接，避免断开最后一个连接时 WAL checkpoint 改写文件快照。
+    import sqlite3
+    observer = sqlite3.connect(db)
+    request.addfinalizer(observer.close)
+    observer.execute("SELECT COUNT(*) FROM audit_log").fetchone()
+    before_audit = query(db)
+    calls = []
+    original = AuditLogger.log
+
+    def log(self, *args, **kwargs):
+        calls.append(kwargs)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(AuditLogger, "log", log)
+    monkeypatch.chdir(tmp_path)
+
+    def files():
+        return {str(p.relative_to(tmp_path)): p.read_bytes()
+                for p in tmp_path.rglob("*") if p.is_file()}
+
+    before_files = files()
+    graph = StateGraph(S.PipelineState)
+    graph.add_node("gate", make_gate(gate))
+    graph.add_edge(START, "gate")
+    graph.add_edge("gate", END)
+    app = graph.compile(checkpointer=InMemorySaver())
+    config = thread_config("side-effects")
+    state = harness.initial_state("side-effects", topics=[{"title": "预算"}],
+                                  minutes_markdown="# 纪要\n预算落实。")
+    app.invoke(state, config)
+    assert any(task.interrupts for task in app.get_state(config).tasks)
+    assert files() == before_files
+    assert query(db) == before_audit
+    payload = ({"topics": [{"title": "修订预算"}]} if gate == "G2"
+               else {"minutes_markdown": "# 修订纪要\n预算落实。"})
+    app.invoke(Command(resume={"decision": decision, "payload": payload}), config)
+    assert not app.get_state(config).next
+    assert files() == before_files
+    assert query(db) == before_audit
+    assert calls == []
+
+
+def test_cancel_preserves_completed_files_and_persistent_state(tmp_path, monkeypatch):
+    """U-ST-10：由已完成 review 落盘的文件和 manifest 在取消及重启后保留。"""
+    import hashlib
+    from mmwf.graph.build import make_checkpointer
+    from mmwf.infra.filestore import make_filestore
+
+    store = make_filestore("cancel-disk", tmp_path, encrypt_enabled=False)
+    original = harness.stub
+
+    def stub(name, payload, runs):
+        node = original(name, payload, runs)
+
+        def invoke(state):
+            result = node(state)
+            if name == "review":
+                store.write_text("record/v1.md", result["record_markdown"], stage="review")
+            return result
+        return invoke
+
+    monkeypatch.setattr(harness, "stub", stub)
+    saver = make_checkpointer(tmp_path / "cancel.db")
+    try:
+        app = harness.build_test_app(runs=harness.Runs(), real=(), checkpointer=saver)
+        with GraphRunner("cancel-disk", app=app) as r:
+            r.start()
+            record = store.resolve("record/v1.md")
+            digest = hashlib.sha256(record.read_bytes()).hexdigest()
+            manifest = store.manifest()
+            before = r.values()
+            r.cancel(reason="保留核对材料")
+            assert record.is_file()
+            assert hashlib.sha256(record.read_bytes()).hexdigest() == digest
+            assert store.manifest() == manifest
+            assert r.values()["record_markdown"] == before["record_markdown"]
+    finally:
+        saver.conn.close()
+    saver = make_checkpointer(tmp_path / "cancel.db")
+    try:
+        app = harness.build_test_app(runs=harness.Runs(), real=(), checkpointer=saver)
+        with GraphRunner("cancel-disk", app=app) as r:
+            assert r.status().status == "cancelled"
+            assert r.status().pending_gate is None
+            with pytest.raises(Exception) as caught:
+                r.resume({"decision": "approve"})
+            assert caught.value.code == "E4005"
+            assert r.values()["record_markdown"] == before["record_markdown"]
+            assert store.read_text("record/v1.md") == before["record_markdown"]
+            assert store.manifest() == manifest
+    finally:
+        saver.conn.close()

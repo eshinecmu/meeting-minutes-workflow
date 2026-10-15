@@ -381,8 +381,8 @@ class GraphRunner:
         pending = _pending_interrupt(snapshot)
         # 取消/失败是**图外部**的状态：图停在闸口上并不知道自己被取消了，
         # 所以这里要让 override 压过 `_derive_status` 的结果（见 __init__）。
-        if self._terminal_override is not None:
-            status = self._terminal_override
+        if self._terminal_override is not None or values.get("stage") == S.STATUS_CANCELLED:
+            status = self._terminal_override or S.STATUS_CANCELLED
             pending = None
         else:
             status = _derive_status(values, snapshot, pending)
@@ -420,6 +420,7 @@ class GraphRunner:
         且 `resume()` 一律报 E4005（不再接受闸口决策）。
         """
         logger.info("取消任务：%s（%s）", self.meeting_id, reason or "未填原因")
+        self.app.update_state(self._cfg, {"stage": S.STATUS_CANCELLED})
         self._cancel_reason = reason
         self._terminal_override = S.STATUS_CANCELLED
         self._touch(S.STATUS_CANCELLED)

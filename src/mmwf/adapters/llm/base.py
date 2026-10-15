@@ -40,15 +40,19 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from mmwf.domain.errors import MmwfError
+
 __all__ = ["LlmClient", "LlmError", "LlmResponse"]
 
 
-class LlmError(RuntimeError):
-    """适配器层错误（**不是给用户看的**）。
+class LlmError(MmwfError, RuntimeError):
+    """携带 §9.3 业务码的适配器错误；detail 仅供日志，用户文案取自码表。
 
-    适配器应把引擎异常翻译成 `mmwf.domain.errors` 里的业务异常再抛出。
-    本类只在"适配器自身写错了"时使用（与 `AsrProviderError` 同理）。
+    保留 RuntimeError 兼容现有适配器调用方。
     """
+
+    def __init__(self, detail: str = "", *, code: str = "E3004") -> None:
+        super().__init__(code=code, detail=detail)
 
 
 class LlmResponse:

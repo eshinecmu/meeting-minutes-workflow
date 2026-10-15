@@ -169,3 +169,25 @@ def test_bookkeeping_stays_in_context_without_history_growth_or_render_leak():
     # 现有渲染器按业务字段输出；上下文有无不影响最终正文。
     assert render_template_markdown(rich, result.issues) == render_template_markdown(
         apply_template(canonical, template), result.issues)
+
+
+def test_action_without_verb_and_deadline_is_downgraded():
+    refs = [{"segment_id": "seg-1", "quote": "预算事项"}]
+    result = normalize_granularity(data("action_items", {
+        "content": "预算事项", "owner": "王五", "source_refs": refs,
+    }))
+    assert entries(result, "action_items") == []
+    pending = entries(result, "pending_decisions")
+    assert len(pending) == 1
+    assert pending[0]["content"] == "预算事项"
+    assert pending[0]["source_refs"] == refs
+    assert any(i["code"] == "ACTION_DOWNGRADED" for i in result.issues)
+
+
+def test_vague_deadline_preserves_original_text():
+    result = normalize_granularity(data("action_items", {
+        "content": "完成报告", "owner": "王五", "deadline": "尽快",
+    }))
+    assert entries(result, "action_items")[0]["deadline"] == "尽快"
+    assert entries(result, "pending_decisions") == []
+    assert any(i["message"] == "时限待明确" for i in result.issues)

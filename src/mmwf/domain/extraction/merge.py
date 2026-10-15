@@ -217,7 +217,7 @@ def _dedup_items(
     items: Sequence[dict[str, object]], *, threshold: float, stats: MergeStats,
     counter: str,
 ) -> list[dict[str, object]]:
-    """按"相似度 ≥ 阈值 **且** 区间重叠"去重（施工卡判据，两个条件缺一不可）。
+    """按"相似度 > 阈值 **且** 区间重叠"去重（施工卡判据，两个条件缺一不可）。
 
     用**聚类**而不是"和上一条比"：同一事项可能在 3 个块里各出现一次，
     只和上一条比会漏掉不相邻的那次。
@@ -226,7 +226,7 @@ def _dedup_items(
     for it in items:
         placed = False
         for g in groups:
-            if similarity(_item_text(g[0]), _item_text(it)) < threshold:
+            if similarity(_item_text(g[0]), _item_text(it)) <= threshold:
                 continue
             if not any(_intervals_overlap(r, s)
                        for r in (cast(list[dict[str, object]], g[0].get("refs")) or [])

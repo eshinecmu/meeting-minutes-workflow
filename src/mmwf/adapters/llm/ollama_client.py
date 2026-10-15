@@ -196,6 +196,8 @@ class OllamaClient:
                 f"Ollama 返回 HTTP {e.code}（{url}）：{detail}"
             ) from e
         except urllib.error.URLError as e:
+            if isinstance(e.reason, TimeoutError):
+                raise LlmError("调用本地大模型超时", code="E3003") from e
             # 最常见的真因：Ollama 没启动 / 端口不对。
             # 把"连不上"翻译成人话，别让用户看到 `ConnectionRefusedError`。
             raise LlmError(
@@ -205,7 +207,7 @@ class OllamaClient:
         except TimeoutError as e:
             raise LlmError(
                 f"调用本地大模型超时（{timeout} 秒，{url}）。"
-                "可调大 config/models.yaml 的 llm.timeout_seconds。"
+                "可调大 config/models.yaml 的 llm.timeout_seconds。", code="E3003"
             ) from e
 
         try:

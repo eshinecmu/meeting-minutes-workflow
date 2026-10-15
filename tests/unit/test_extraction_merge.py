@@ -124,3 +124,46 @@ def test_thresholds_from_settings_change_extraction(
     assert result.stats["chunks_ok"] == 2
     items = result.topics if kind == "topic" else result.resolutions
     assert len(items) == expected_count
+
+
+@pytest.mark.parametrize("suffix,count", [("子", 2), ("", 1)])
+def test_resolution_similarity_is_strictly_above_point_nine(suffix, count):
+    # 裁决：03 U-EX-07 的 >0.9 严格执行；保留引用区间重叠这一更窄的合并前提。
+    text = "甲乙丙丁戊己庚辛壬癸"
+    assert similarity(text, text + suffix) == (0.9 if suffix else 1.0)
+    result = merge_chunk_results([{"resolutions": [
+        {"text": text, "refs": [{"segment_id": "seg-1"}]},
+        {"text": text + suffix, "refs": [{"segment_id": "seg-1"}]},
+    ]}])
+    assert len(result.resolutions) == count
+
+
+def test_yaml_reload_changes_point_eight_two_topic_threshold(tmp_path, chunk_response):
+    """U-EX-08：实际修改临时 extraction.yaml 并重新加载，而非内存替换。"""
+    import shutil
+    from pathlib import Path
+    import yaml
+    from mmwf.settings import reload_settings
+
+    source = Path(__file__).resolve().parents[2] / "config"
+    for name in ("app.yaml", "models.yaml", "thresholds.yaml", "extraction.yaml"):
+        shutil.copyfile(source / name, tmp_path / name)
+    path = tmp_path / "extraction.yaml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    a, b = "预算方案审核落实", "预算方案审核落实好"
+    assert 0.82 < similarity(a, b) < 0.99
+    counts = []
+    for threshold in (0.82, 0.99, 0.82):
+        doc["extraction"]["merge"]["topic_similarity_threshold"] = threshold
+        path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+        settings = reload_settings(tmp_path)
+        assert settings.extraction.merge.topic_similarity_threshold == threshold
+        result = extract_minutes(
+            "[00:00] 张三：开始讨论。\n[00:01] 李四：批准预算方案。\n[00:02] 王五：继续讨论。",
+            llm=FakeLlmClient(script=[chunk_response(a, "批准预算方案。"),
+                                      chunk_response(b, "批准预算方案。")]),
+            settings=settings, target_chars=8, overlap_chars=6, max_workers=1,
+        )
+        assert result.stats["chunks_ok"] == 2
+        counts.append(len(result.topics))
+    assert counts == [1, 2, 1]

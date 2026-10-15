@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
 from typing import Any, Callable, Iterable, Sequence
 
 from mmwf.adapters.llm.base import LlmError, LlmResponse
@@ -111,7 +112,13 @@ class FakeLlmClient:
             raise LlmError(f"（测试注入）第 {n} 次调用失败")
 
         if self._fn is not None:
-            return LlmResponse(self._fn(prompt), done_reason="stop")
+            try:
+                return LlmResponse(self._fn(prompt), done_reason="stop")
+            except TimeoutError as exc:
+                raise LlmError(str(exc), code="E3003") from exc
+            except urllib.error.URLError as exc:
+                code = "E3003" if isinstance(exc.reason, TimeoutError) else "E3004"
+                raise LlmError(str(exc), code=code) from exc
 
         if self._oracle:
             return LlmResponse(
