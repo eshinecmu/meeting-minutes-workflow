@@ -84,6 +84,7 @@ class Chunk:
         char_count: `text` 的长度。
         overlap_lead: 块首有**几段**是从上一块重叠过来的（0 = 无重叠）。
             归并时用它判断"这段内容上一块已经抽过了"，避免重复计数。
+        overlap_dropped: 因最后一段重叠与新段仍超上限而放弃重叠。
         forced_split: 是否由"单段超长强制切分"产生（用于告警）。
     """
 
@@ -93,6 +94,7 @@ class Chunk:
     char_count: int
     overlap_lead: int = 0
     forced_split: bool = False
+    overlap_dropped: bool = False
 
 
 @dataclass
@@ -191,15 +193,6 @@ def _expand_long_segments(
     return out, split_seqs
 
 
-def _is_boundary(prev: Segment | None, cur: Segment, *,
-                 long_silence_ms: int) -> bool:
-    """判据 ①②③ 的"或"。判据 ④（字数）由调用方另行 `AND`。"""
-    if has_speaker_change(prev, cur):
-        return True
-    if starts_with_turn_word(cur.text, TURN_WORDS):
-        return True
-    return bool(cur.gap_after_ms is not None and cur.gap_after_ms > long_silence_ms)
-
 
 def chunk_segments(
     segments: list[Segment] | tuple[Segment, ...],
@@ -234,10 +227,11 @@ def chunk_segments(
     buf = _Buf()
     overlap_lead = 0
     prev: Segment | None = None
+    overlap_dropped = False
 
     def emit() -> None:
         """输出当前块，并携带按段对齐的尾部重叠。"""
-        nonlocal buf, overlap_lead
+        nonlocal buf, overlap_lead, overlap_dropped
         chunks.append(Chunk(
             index=len(chunks) + 1,
             segments=tuple(buf.segments),
@@ -245,21 +239,33 @@ def chunk_segments(
             char_count=buf.chars,
             overlap_lead=overlap_lead,
             forced_split=_was_forced(buf.segments),
+            overlap_dropped=overlap_dropped,
         ))
+        overlap_dropped = False
         buf = buf.tail_overlap(overlap_chars)
         overlap_lead = len(buf.segments)
 
     for seg in expanded:
+        # ①② 是 seg 之前的边界；已有新内容且攒够字数才输出。
+        if (len(buf.segments) > overlap_lead and buf.chars >= target_chars
+                and (has_speaker_change(prev, seg)
+                     or starts_with_turn_word(seg.text, TURN_WORDS))):
+            emit()
         # 无语义边界时也不能突破硬上限；超长单段的碎片不能重新拼回去。
         if buf.segments and buf.chars + seg.char_count > max_chars:
             if len(buf.segments) > overlap_lead:
                 emit()
             # 完整重叠段与新段放不下时，优先保住新内容和大小上限。
-            while buf.segments and buf.chars + seg.char_count > max_chars:
+            while len(buf.segments) > 1 and buf.chars + seg.char_count > max_chars:
                 buf.chars -= buf.segments.pop(0).char_count
+            # 最后一段只在确实放不下时放弃，明确报告这个边界例外。
+            if buf.segments and buf.chars + seg.char_count > max_chars:
+                buf = _Buf()
+                overlap_dropped = True
             overlap_lead = len(buf.segments)
         buf.add(seg)
-        boundary = _is_boundary(prev, seg, long_silence_ms=long_silence_ms)
+        # ③ 是 seg 之后的估计或显式静音，加入本段后判断。
+        boundary = seg.gap_after_ms is not None and seg.gap_after_ms > long_silence_ms
         prev = seg
 
         # ★ 这就是那个 AND —— 攒够字数 **且** 遇到语义边界，才切。
@@ -274,5 +280,6 @@ def chunk_segments(
             char_count=buf.chars,
             overlap_lead=overlap_lead,
             forced_split=_was_forced(buf.segments),
+            overlap_dropped=overlap_dropped,
         ))
     return chunks

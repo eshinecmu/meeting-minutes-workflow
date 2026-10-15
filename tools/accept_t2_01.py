@@ -63,9 +63,12 @@ def check_standard_1(tmp: Path) -> bool:
             segments[4] = Segment(5, "下面" + "五" * 298, speaker="张三")
         else:
             segments[4] = Segment(5, "五" * 300, speaker="张三", gap_after_ms=1501)
-        chunks = chunk_segments(segments, overlap_chars=0)
-        ok &= _assert(len(chunks) == 2 and chunks[0].segments == tuple(segments[:5]),
-                      f"{label}：攒够 1500 字后在边界切开")
+        target = 1500 if kind == "silence" else 1200
+        cut = 5 if kind == "silence" else 4
+        chunks = chunk_segments(segments, target_chars=target, overlap_chars=0)
+        ok &= _assert(len(chunks) == 2 and chunks[0].segments == tuple(segments[:cut])
+                      and chunks[1].segments[0] == segments[cut],
+                      f"{label}：攒够 {target} 字后在正确的段前/段后切开")
     return ok
 
 

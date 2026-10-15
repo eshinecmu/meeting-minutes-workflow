@@ -71,7 +71,7 @@ class Segment:
         speaker: 说话人，抽不到为 `None`。
         start_ms: 起始毫秒；该行没有时间码时为 `None`。
         end_ms: 结束毫秒；**由下一段的 `start_ms` 推得**，末段为 `None`。
-        gap_after_ms: 与**下一段**之间的静音时长；末段或算不出时为 `None`。
+        gap_after_ms: 与**下一段**之间的静音时长（Markdown 输入为语速估计值）；末段或算不出时为 `None`。
     """
 
     seq: int
@@ -97,10 +97,12 @@ class SegmentizeReport:
     把这个数字报出来，让人能看见退化，而不是默默变差。
     """
 
+    # 有相邻时间码的 gap 均为语速估计值，不能作为实测静音。
     total: int
     with_timecode: int
     no_timecode: int
     speakers_found: int
+    estimated_gaps: int = 0
 
     @property
     def timecode_ratio(self) -> float:
@@ -133,13 +135,15 @@ def _parse_timecode(m: re.Match[str]) -> int:
     return ((int(a) * 60 + int(b)) * 60 + int(c)) * 1000
 
 
-def segmentize(record_markdown: str) -> tuple[list[Segment], SegmentizeReport]:
+def segmentize(record_markdown: str, *, speech_chars_per_sec: float = 4.0) -> tuple[list[Segment], SegmentizeReport]:
     """把记录稿反解成 segments，并给出一份体检报告。
 
     Returns:
         `(segments, report)`。空输入返回 `([], report)` —— **不抛异常**：
         空记录稿是合法输入（U-EX-10），比如会议只开了 5 秒。
     """
+    if speech_chars_per_sec <= 0:
+        raise ValueError("speech_chars_per_sec 必须大于 0")
     raw: list[tuple[str, str | None, int | None]] = []
     # (正文, 说话人, start_ms)
     for line in (record_markdown or "").splitlines():
@@ -170,14 +174,12 @@ def segmentize(record_markdown: str) -> tuple[list[Segment], SegmentizeReport]:
     segments: list[Segment] = []
     for i, (text, speaker, start_ms) in enumerate(raw):
         next_start = raw[i + 1][2] if i + 1 < len(raw) else None
-        # end_ms 只能**推**：记录稿里没有"本段结束时间"。
-        # 用下一段的 start_ms 当本段的 end_ms —— 这是唯一可得的近似，
-        # 卡 §1.3 的公式是 gap = next.start_ms - cur.end_ms；但 Markdown
-        # 没有真实结束时间，若拿上面的近似 end_ms 相减，gap 将恒为零。
-        # 保留原实现的相邻起点间隔作为边界信号；这是有损近似，并非实测静音。
+        # Markdown 没有真实结束时间；扣除按语速估计的说话时长，得到估计静音。
+        # end_ms 仍沿用下一段起点作溯源区间上界，不冒充真实发言结束时间。
         end_ms = next_start
-        gap = (next_start - start_ms) if (next_start is not None
-                                          and start_ms is not None) else None
+        gap = (max(0, next_start - start_ms
+                   - round(len(text) / speech_chars_per_sec * 1000))
+               if next_start is not None and start_ms is not None else None)
         segments.append(Segment(
             seq=i + 1,
             text=text,
@@ -192,6 +194,7 @@ def segmentize(record_markdown: str) -> tuple[list[Segment], SegmentizeReport]:
         total=len(segments),
         with_timecode=with_tc,
         no_timecode=len(segments) - with_tc,
+        estimated_gaps=sum(s.gap_after_ms is not None for s in segments),
         speakers_found=len({s.speaker for s in segments if s.speaker}),
     )
     return segments, report

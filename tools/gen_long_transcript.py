@@ -62,13 +62,22 @@ TOPICS = (
 )
 
 
-def _timecode(seconds: int) -> str:
+def _timecode(seconds: float) -> str:
+    seconds = round(seconds)
     return f"[{seconds // 3600:02d}:{(seconds % 3600) // 60:02d}:{seconds % 60:02d}]"
 
 
 def build() -> tuple[str, list[dict]]:
     """生成 `(记录稿 Markdown, 25 项标注)`。"""
     rng = random.Random(SEED)
+    timing_rng = random.Random(SEED + 1)
+
+    def advance(text: str) -> float:
+        # 保留内容随机序列；时间另用固定种子，约 4 字/秒加短停顿。
+        rng.randrange(20, 45)
+        pause = 3.0 if len(lines) % 47 == 0 else timing_rng.uniform(0.3, 1.2)
+        return len(text) / 4.0 + pause
+
     lines: list[str] = ["# 会议记录稿", ""]
     expected: list[dict] = []
 
@@ -87,9 +96,8 @@ def build() -> tuple[str, list[dict]]:
         topic = TOPICS[topic_i % len(TOPICS)]
         speaker = SPEAKERS[rng.randrange(len(SPEAKERS))]
 
-        # ① 长静音：每 7 轮制造一次 >1500ms 的间隔（U-EX-03 的判据）
-        if rng.random() < 0.15:
-            seconds += 3
+        # 兼容原内容随机序列；静音由 advance 单独生成。
+        rng.random()
         # ② 转折词：每 5 轮一次（U-EX-02 的判据）
         use_turn = (topic_i % 5 == 0)
         # ③ 说话人切换：由上面随机挑人天然产生（U-EX-01 的判据）
@@ -98,7 +106,7 @@ def build() -> tuple[str, list[dict]]:
         text = prefix + FILLER_TPL[topic_i % len(FILLER_TPL)].format(topic=topic)
         lines.append(f"{_timecode(seconds)} {speaker}：{text}")
         body_chars += len(text)
-        seconds += rng.randrange(20, 45)
+        seconds += advance(text)
 
         # ---- 该放一条议定事项了 ----
         if since_last_res >= chars_per_resolution and res_index < total_resolutions:
@@ -108,7 +116,8 @@ def build() -> tuple[str, list[dict]]:
             quote = RESOLUTION_TPL.format(i=res_index, topic=topic)
             lines.append(f"{_timecode(seconds)} {owner}：{quote}")
             body_chars += len(quote)
-            seconds += rng.randrange(20, 45)
+            quote_start_ms = round(seconds) * 1000
+            seconds += advance(quote)
             expected.append({
                 "id": f"R{res_index:02d}",
                 "quote": quote,
@@ -116,7 +125,7 @@ def build() -> tuple[str, list[dict]]:
                 "topic": f"{topic}工作",
                 "content": quote,
                 "owner": owner,
-                "start_ms": seconds * 1000,
+                "start_ms": quote_start_ms,
             })
         else:
             since_last_res += len(text)
@@ -130,7 +139,8 @@ def build() -> tuple[str, list[dict]]:
         quote = RESOLUTION_TPL.format(i=res_index, topic=topic)
         lines.append(f"{_timecode(seconds)} {owner}：{quote}")
         body_chars += len(quote)
-        seconds += rng.randrange(20, 45)
+        quote_start_ms = round(seconds) * 1000
+        seconds += advance(quote)
         expected.append({
             "id": f"R{res_index:02d}",
             "quote": quote,
@@ -138,7 +148,7 @@ def build() -> tuple[str, list[dict]]:
             "topic": f"{topic}工作",
             "content": quote,
             "owner": owner,
-            "start_ms": seconds * 1000,
+            "start_ms": quote_start_ms,
         })
 
     return "\n".join(lines) + "\n", expected

@@ -277,3 +277,10 @@ def test_glossary_rows_well_formed():
         assert len(r) == 4, f"列数不对：{r}"
         assert r[0] in valid_categories, f"未登记的分类：{r[0]}"
         assert r[1].strip(), "canonical 不得为空"
+
+
+@pytest.mark.parametrize("rate", [0, -1, float("inf"), float("nan")])
+def test_speech_chars_per_sec_must_be_positive_and_finite(rate):
+    """静音估计语速必须为有限正数。"""
+    with pytest.raises(ValueError):
+        ExtractionConfig.ChunkConfig(speech_chars_per_sec=rate)

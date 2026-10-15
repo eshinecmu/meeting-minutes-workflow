@@ -138,6 +138,7 @@ class ExportConfig(BaseModel):
 
 class ExtractionConfig(BaseModel):
     class ChunkConfig(BaseModel):
+        speech_chars_per_sec: float = Field(default=4.0, gt=0, allow_inf_nan=False)
         target_chars: int = 1500
         min_chars: int = 1000
         max_chars: int = 2000

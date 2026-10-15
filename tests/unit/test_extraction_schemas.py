@@ -174,3 +174,34 @@ def test_unmatched_quote_does_not_block_result():
     result = extract_minutes("[00:00] 张三：讨论其他工作。", llm=FakeLlmClient(script=[json.dumps(payload())]))
     assert len(result.resolutions) == 1
     assert result.resolutions[0]["refs"] == []
+
+
+@pytest.mark.parametrize("keys", [("location",), ("title", "meeting_time", "location", "host", "attendees", "recorder"), ("topics",)])
+def test_chunk_missing_metadata_is_filled_without_retry(keys):
+    """块级元数据缺键补空并只记一条 issue，不丢议定、不消耗重试。"""
+    data = payload()
+    for key in keys:
+        del data[key]
+    llm = FakeLlmClient(script=[json.dumps(data)])
+    result = extract_minutes("[00:00] 张三：同意预算。", llm=llm)
+    assert len(llm.calls) == 1
+    assert len(result.resolutions) == (0 if "topics" in keys else 1)
+    issues = [i for i in result.issues if i["rule"] == "chunk_meta_missing"]
+    assert len(issues) == 1
+    assert set(issues[0]["keys"]) == set(keys)
+    assert issues[0]["chunk"] == 1
+    assert all(key in issues[0]["detail"] for key in keys)
+    assert set(keys) <= set(minutes_json_schema()["required"])
+
+
+@pytest.mark.parametrize("key", ["content", "source_quote", "source_start_ms", "source_end_ms", "name", "discussion"])
+def test_chunk_conclusion_fields_still_require_retry(key):
+    """元数据补空不能掩盖结论或议题的必填字段缺失。"""
+    data = payload()
+    topic = data["topics"][0]
+    del (topic if key in {"name", "discussion"} else topic["resolutions"][0])[key]
+    llm = FakeLlmClient(script=[json.dumps(data)])
+    result = extract_minutes("[00:00] 张三：同意预算。", llm=llm)
+    assert len(llm.calls) == 3
+    assert not result.resolutions
+    assert any(i["rule"] == "chunk_schema_failed" for i in result.issues)

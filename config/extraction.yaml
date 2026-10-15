@@ -2,6 +2,8 @@ extraction:
   # 抽取实现仅允许 naive（朴素实现，默认）或 llm（本地大模型）。
   engine: naive
   chunk:
+    # 记录稿无结束时间，以语速估计说话时长后推算静音。
+    speech_chars_per_sec: 4.0
     target_chars: 1500
     min_chars: 1000
     max_chars: 2000

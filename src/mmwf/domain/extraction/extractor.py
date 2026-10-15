@@ -181,6 +181,19 @@ def _extract_one_chunk(
             })
             return None, issues
 
+        # 中间块通常不知道会议元数据；只补缺键，结论字段继续严格校验。
+        if isinstance(payload, dict):
+            missing = [k for k in ("title", "meeting_time", "location", "host",
+                                   "attendees", "recorder", "topics") if k not in payload]
+            if missing:
+                existing = next((i for i in issues if i["rule"] == "chunk_meta_missing"), None)
+                if existing is None:
+                    existing = {"rule": "chunk_meta_missing", "chunk": chunk.index, "keys": []}
+                    issues.append(existing)
+                existing["keys"] = sorted(set(existing["keys"]) | set(missing))
+                existing["detail"] = "块级缺失元数据已补空：" + "、".join(existing["keys"])
+                for key in missing:
+                    payload[key] = [] if key in {"attendees", "topics"} else ""
         obj, problems = validate_minutes(payload)
         if obj is not None:
             return obj, issues
@@ -287,7 +300,9 @@ def extract_minutes(
     cfg = _resolve_cfg(settings, target_chars, overlap_chars)
 
     # ---- Step 1 分块 ----
-    segments, seg_report = segmentize(record_markdown or "")
+    segments, seg_report = segmentize(
+        record_markdown or "", speech_chars_per_sec=cfg["speech_chars_per_sec"]
+    )
     if not segments:
         # 空输入：不调用模型，直接返回空结果（U-EX-10）
         return ExtractResult(
@@ -360,6 +375,8 @@ def extract_minutes(
     stats = {
         "segments": seg_report.total,
         "no_timecode": seg_report.no_timecode,
+        "estimated_gaps": seg_report.estimated_gaps,
+        "overlap_dropped": sum(ch.overlap_dropped for ch in chunks),
         "chunks": len(chunks),
         "chunks_ok": len(chunk_results),
         "max_workers": max_workers,
@@ -470,6 +487,7 @@ def _resolve_cfg(settings: Any, target_chars: int | None,
     return {
         "target_chars": (target_chars if target_chars is not None
                          else getattr(chunk, "target_chars", 1500)),
+        "speech_chars_per_sec": getattr(chunk, "speech_chars_per_sec", 4.0),
         "max_chars": getattr(chunk, "max_chars", 2000),
         "overlap_chars": (overlap_chars if overlap_chars is not None
                           else getattr(chunk, "overlap_chars", 200)),
