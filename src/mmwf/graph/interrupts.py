@@ -228,7 +228,7 @@ G2_PAYLOAD_KEYS: tuple[str, ...] = ("topics", "resolutions", "action_items")
 
 #: G3 送审的字段（纪要草稿）。同时带上问题清单：
 #: 审定人需要知道"机器自己觉得哪里不确定"，否则无从下手核对。
-G3_PAYLOAD_KEYS: tuple[str, ...] = ("minutes_markdown", "validation_issues")
+G3_PAYLOAD_KEYS: tuple[str, ...] = ("minutes_markdown", "validation_issues", "minutes_structured", "issues")
 
 #: 闸口允许通过 `edit` 修改的状态字段（SAD §5.3 的 `edited_payload`）。
 #:
@@ -397,6 +397,8 @@ def _apply_decision(state: dict, *, gate: str, node_id: str, raw: Any) -> dict:
         out = {GATE_ROUTE_KEY: GATE_ROUTE[gate]["approve"]}
         if gate == "G2" and "_confirmed_topics" in raw:
             out["topics"] = raw["_confirmed_topics"]
+        if gate == "G3" and "_g3_candidate" in raw:
+            out.update({k: raw["_g3_candidate"][k] for k in ("minutes_structured", "minutes_markdown", "issues")})
         return out
 
     if d.decision == "edit":
@@ -408,6 +410,8 @@ def _apply_decision(state: dict, *, gate: str, node_id: str, raw: Any) -> dict:
         out = dict(merged)
         if gate == "G2" and "_confirmed_topics" in raw:
             out["topics"] = raw["_confirmed_topics"]
+        if gate == "G3" and "_g3_candidate" in raw:
+            out.update({k: raw["_g3_candidate"][k] for k in ("minutes_structured", "minutes_markdown", "issues")})
         out[GATE_ROUTE_KEY] = GATE_ROUTE[gate]["edit"]
         return out
 

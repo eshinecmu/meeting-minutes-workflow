@@ -32,7 +32,7 @@ def test_real_callbacks(gate_env, gate, decision):
             items[0]["title"] = "人工修正议题"
             payload = {"topics": items}
         else:
-            payload = {"minutes_markdown": "# 人工修正纪要\n\n确认。"}
+            payload = {"minutes": {"topics": [{"name": "人工修正预算议题"}, {}]}}
     e.calls.clear()
     body = send(e, gate, pending["checkpoint_id"], decision, payload)
     assert body["ok"], body
@@ -356,3 +356,90 @@ def test_missing_reject_count_warns_after_successful_resume(gate_env, monkeypatc
     assert len(audits(e)) == 1
     retry = send(e, "G2", e.pending["checkpoint_id"], "reject")
     assert retry["ok"] and retry["data"]["resumed"] is False
+
+
+@pytest.mark.parametrize('missing_source', [False, True])
+def test_g3_registered_candidate_recovery_rechecks(gate_env, monkeypatch, missing_source):
+    e = gate_env
+    pending = send(e, 'G2', e.pending['checkpoint_id'])['data']['pending_gate']
+    original = GateService._resume
+
+    def fail(*args):
+        raise RuntimeError('故障：G3 登记完成但尚未 resume')
+
+    monkeypatch.setattr(GateService, '_resume', fail)
+    payload = {'minutes': {'topics': [{'name': '恢复后的预算议题'}, {}]}}
+    result = send(e, 'G3', pending['checkpoint_id'], 'edit', payload)
+    assert not result['ok']
+    record = e.rt.gate_service().store.get(e.mid, 'G3', pending['checkpoint_id'])
+    assert record['resume']['_g3_candidate']['minutes_structured']['topics'][0]['name'] == '恢复后的预算议题'
+    if missing_source:
+        # 模拟登记后权威源暂不可读；保留同一检查点身份验证恢复预检。
+        monkeypatch.setattr('mmwf.app.services.minutes.authoritative_segments', lambda s: [])
+    monkeypatch.setattr(GateService, '_resume', original)
+    from mmwf.api.routes._context import Runtime
+    fresh = Runtime(e.rt.cfg)
+    e.calls.clear()
+    recovered = fresh.gate_service().recover_pending_decisions()
+    if missing_source:
+        assert recovered == [] and e.calls == []
+        with fresh.runner(e.mid) as runner:
+            assert runner.status().pending_gate.checkpoint_id == pending['checkpoint_id']
+    else:
+        assert len(recovered) == 1 and recovered[0]['rerun_nodes'] == []
+        with fresh.runner(e.mid) as runner:
+            values = runner.values()
+            assert values['minutes_structured']['topics'][0]['name'] == '恢复后的预算议题'
+            assert '恢复后的预算议题' in values['minutes_markdown']
+        assert all(name not in {'transcribe', 'extract', 'generate', 'assemble'} for _, name in e.calls)
+        assert fresh.gate_service().recover_pending_decisions() == []
+    assert len(audits(e)) == 2
+
+
+def test_g3_recovery_failure_does_not_stop_other_meetings(gate_env, monkeypatch):
+    from mmwf.api.routes._context import Runtime
+    from mmwf.app.services import minutes
+
+    e = gate_env
+    first = send(e, 'G2', e.pending['checkpoint_id'])['data']['pending_gate']
+    created = e.client.post('/api/v1/meetings', json={
+        'title': '第二个预算会', 'record_markdown': '张三：研究预算执行。\n\n李四：讨论年度计划。'}).json()
+    assert created['ok'], created
+    second_id = created['data']['meeting_id']
+    base = f'/api/v1/meetings/{second_id}'
+    started = e.client.post(base + '/start').json()
+    assert started['ok'], started
+    second = e.client.post(base + '/gate/G2/decide', json={
+        'checkpoint_id': started['data']['pending_gate']['checkpoint_id'],
+        'decision': 'approve', 'operator': '秘书'}).json()['data']['pending_gate']
+    original_resume = GateService._resume
+
+    def fail(*args):
+        raise RuntimeError('故障：已登记，尚未恢复')
+
+    monkeypatch.setattr(GateService, '_resume', fail)
+    for meeting_id, pending in ((e.mid, first), (second_id, second)):
+        with pytest.raises(RuntimeError):
+            e.rt.gate_service().apply_decision(meeting_id, 'G3', pending['checkpoint_id'],
+                                              'edit', {'minutes': {'title': '预算会修订'}}, '秘书', '')
+    monkeypatch.setattr(GateService, '_resume', original_resume)
+    authoritative_segments = minutes.authoritative_segments
+
+    def unavailable_for_first(state):
+        return [] if state['meeting_id'] == e.mid else authoritative_segments(state)
+
+    monkeypatch.setattr(minutes, 'authoritative_segments', unavailable_for_first)
+    fresh = Runtime(e.rt.cfg)
+    service = fresh.gate_service()
+    registered = service.store.registered()
+    assert [r['meeting_id'] for r in registered] == [e.mid, second_id]
+    e.calls.clear()
+    recovered = service.recover_pending_decisions()
+    assert len(recovered) == 1 and recovered[0]['from_checkpoint'] == second['checkpoint_id']
+    with fresh.runner(e.mid) as runner:
+        assert runner.status().pending_gate.checkpoint_id == first['checkpoint_id']
+    with fresh.runner(second_id) as runner:
+        assert runner.status().status == 'archived'
+        assert runner.values()['minutes_structured']['title'] == '预算会修订'
+    assert all(mid != e.mid for mid, _ in e.calls)
+    assert [r['meeting_id'] for r in service.store.registered()] == [e.mid]

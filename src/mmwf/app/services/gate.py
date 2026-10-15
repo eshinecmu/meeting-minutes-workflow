@@ -35,7 +35,8 @@ class G2Edit(BaseModel):
 
 class G3Edit(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
-    minutes_markdown: StrictStr
+    minutes_markdown: StrictStr | None = None
+    minutes: dict | None = None
 
 
 def validate_payload(gate, baseline, payload):
@@ -91,9 +92,17 @@ class GateService:
             if not pending or pending.gate != gate or pending.checkpoint_id != checkpoint:
                 raise MmwfError(code="E4001", detail="闸口或检查点已过期、不匹配或已决定")
             before = runner.values()
-            after = validate_payload(gate, before, body["payload"])
+            if gate == "G3":
+                from .minutes import gate_candidate
+                candidate = gate_candidate(self.runtime, meeting_id, before, body["payload"])
+                after = candidate
+            else:
+                after = validate_payload(gate, before, body["payload"])
             segments = diff_versions(system_text(gate, before), system_text(gate, after))
-            return {"segments": segments, "summary": summarize_blocks(segments)}
+            result = {"segments": segments, "summary": summarize_blocks(segments)}
+            if gate == "G3":
+                result.update(minutes_markdown=candidate["minutes_markdown"], issues=candidate["issues"])
+            return result
 
     def apply_decision(self, meeting_id, gate, checkpoint_id, decision, payload,
                        operator, comment, *, auto=False, reason="human", decided_at=None):
@@ -127,12 +136,19 @@ class GateService:
             if decision == "reject" and int(values.get(GATE_REJECT_KEY) or 0) >= MAX_GATE_REJECTS:
                 raise MmwfError(code="E4001", detail="驳回次数已达上限，请人工介入")
             before = gate_content(gate, values)
-            after = validate_payload(gate, values, payload) if decision == "edit" else deepcopy(before)
+            after = validate_payload(gate, values, payload) if decision == "edit" and gate == "G2" else deepcopy(before)
+            candidate = None
+            if gate == "G3" and decision != "reject":
+                from .minutes import gate_candidate
+                candidate = gate_candidate(self.runtime, meeting_id, values, payload if decision == "edit" else None)
+                after = {"minutes": candidate["minutes_structured"], "minutes_markdown": candidate["minutes_markdown"]}
             changed = field_diff(before, after) if decision == "edit" else {}
             target = ("extract" if gate == "G2" else "assemble") if decision == "reject" else ("generate" if gate == "G2" else "export")
             transition = {"extract": "extracting", "assemble": "assembling", "generate": "generating", "export": "exporting"}[target]
             resume = {"decision": decision, "operator": operator, "comment": comment,
-                      "payload": after if decision == "edit" else {}}
+                      "payload": ({"minutes_markdown": after["minutes_markdown"]} if gate == "G3" else after) if decision == "edit" else {}}
+            if candidate is not None:
+                resume["_g3_candidate"] = candidate
             if gate == "G2" and decision != "reject":
                 # 只通过服务生成内部增量，confirmed 不属于用户白名单。
                 resume["_confirmed_topics"] = [dict(t, confirmed=True) for t in after["topics"]]
@@ -164,6 +180,13 @@ class GateService:
             return self._resume(runner, registered)
 
     def _resume(self, runner, record):
+        if record["gate"] == "G3" and record["request"]["decision"] != "reject":
+            from .minutes import gate_candidate
+            state = runner.values()
+            saved = record["resume"].get("_g3_candidate")
+            if saved:
+                state = {**state, **saved}
+            record["resume"]["_g3_candidate"] = gate_candidate(self.runtime, record["meeting_id"], state)
         before = runner.run_counts()
         status = runner.resume(record["resume"])
         self.observe_pending(record["meeting_id"], runner)

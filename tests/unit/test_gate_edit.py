@@ -89,7 +89,7 @@ def test_g3_invalid(payload):
 
 def test_g3_newlines():
     after = validate_edit("G3", {"minutes_markdown": "甲\n乙"}, {"minutes_markdown": "甲\r\n乙"})
-    assert field_diff({"minutes_markdown": "甲\n乙"}, after) == {}
+    assert field_diff({"minutes_markdown": "甲\n乙", "minutes": {}}, after) == {}
 
 
 def test_renaming_to_existing_title_is_ambiguous(baseline):

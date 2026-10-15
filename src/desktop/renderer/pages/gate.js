@@ -143,6 +143,8 @@ export async function renderGate(view, meeting, opts, shell) {
     }
   }
 
+  const issueWrap = document.createElement('section');
+  view.appendChild(issueWrap);
   const diffWrap = document.createElement('section');
   diffWrap.className = 'card gate-diff';
   if (level === 'G2') {
@@ -162,8 +164,43 @@ export async function renderGate(view, meeting, opts, shell) {
   } else {
     const data = await api.call('GET', `/meetings/${meeting.meeting_id}/minutes`);
     if (!(await currentCheckpoint())) return;
-    draft = { minutes_markdown: data.minutes_markdown || '' };
-    editField(listWrap, '纪要正文（未提交）', draft.minutes_markdown, value => { draft.minutes_markdown = value; });
+    draft = { minutes: editableMinutes(data.minutes_structured || {}) };
+    const previewText = document.createElement('pre');
+    previewText.className = 'minutes-preview';
+    previewText.textContent = data.minutes_markdown || '';
+    listWrap.appendChild(previewText);
+    function fields(parent, item, names) {
+      for (const field of names) {
+        editField(parent, field, Array.isArray(item[field]) ? item[field].join('\n') : item[field], value => {
+          item[field] = ['attendees', 'readings'].includes(field) ? (value ? value.split('\n') : []) : value;
+        });
+      }
+    }
+    fields(listWrap, draft.minutes, ['title', 'meeting_time', 'location', 'host', 'attendees', 'recorder']);
+    draft.minutes.topics.forEach((topic, index) => {
+      fields(listWrap, topic, ['name', 'discussion', 'readings']);
+      const original = data.minutes_structured?.topics?.[index] || {};
+      const sources = document.createElement('pre');
+      sources.textContent = sourceText(original);
+      listWrap.appendChild(sources); // 来源只读，不进入编辑载荷。
+      for (const kind of ['resolutions', 'action_items', 'pending_decisions']) {
+        topic[kind].forEach((item, itemIndex) => {
+          fields(listWrap, item, kind === 'pending_decisions' ? ['content', 'owner', 'deadline', 'decision_maker'] : ['content', 'owner', 'deadline']);
+          const basis = document.createElement('pre');
+          basis.textContent = sourceText(original[kind]?.[itemIndex]);
+          listWrap.appendChild(basis);
+        });
+      }
+    });
+    const issues = await api.call('GET', `/meetings/${meeting.meeting_id}/issues`);
+    if (!(await currentCheckpoint())) return;
+    renderIssues(issueWrap, issues);
+    const download = document.createElement('button');
+    download.textContent = '下载问题清单';
+    download.addEventListener('click', async () => {
+      try { await api.downloadIssues(meeting.meeting_id); } catch (err) { S.showError(err); }
+    });
+    head.appendChild(download);
   }
 
   const actions = document.createElement('section');
@@ -178,6 +215,10 @@ export async function renderGate(view, meeting, opts, shell) {
       const data = await api.call('POST', `/meetings/${meeting.meeting_id}/gate/${level}/diff`, api.gateRequest(roundToken, { payload: draft }));
       if (invalid || revision !== requestedRevision || !view.contains(head)) return;
       renderDiff(diffWrap, data.segments);
+      if (level === 'G3') {
+        listWrap.querySelector('.minutes-preview').textContent = data.minutes_markdown;
+        renderIssues(issueWrap, { issues: data.issues, complete: true });
+      }
     } catch (err) {
       await handleError(err);
     }
@@ -263,7 +304,8 @@ function renderDiff(container, segments) {
 }
 
 function timecode(ms) {
-  if (!Number.isFinite(ms)) return '时间未提供';
+  // T2-04 §2.3：缺真实时间时明确提示，不承诺音频跳转。
+  if (!Number.isFinite(ms)) return '暂无时间信息';
   const seconds = Math.floor(ms / 1000);
   return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60]
     .map(value => String(value).padStart(2, '0')).join(':');
@@ -271,4 +313,34 @@ function timecode(ms) {
 
 function riskText(risk) {
   return ({ high: '高', medium: '中', low: '低' })[risk] || '未评级';
+}
+
+function editableMinutes(value) {
+  const pick = (item, keys) => Object.fromEntries(keys.filter(k => k in item).map(k => [k, item[k]]));
+  const out = pick(value, ['title', 'meeting_time', 'location', 'host', 'attendees', 'recorder']);
+  out.topics = (value.topics || []).map(topic => {
+    const next = pick(topic, ['name', 'discussion', 'readings']);
+    for (const kind of ['resolutions', 'action_items', 'pending_decisions']) {
+      next[kind] = (topic[kind] || []).map(item => pick(item, ['content', 'owner', 'deadline', 'decision_maker']));
+    }
+    return next;
+  });
+  return out;
+}
+
+function renderIssues(container, payload) {
+  container.replaceChildren();
+  if (!payload.complete) container.textContent = '历史检查未完成';
+  for (const issue of payload.issues || []) {
+    const row = document.createElement('p');
+    row.className = `issue-${issue.level}`;
+    row.textContent = `[${issue.level}] ${issue.code} ${issue.target}：${issue.message}`;
+    if (issue.code.includes('FUZZY')) row.textContent += ' 原文有字词差异，待核对';
+    container.appendChild(row);
+  }
+}
+
+function sourceText(item = {}) {
+  const refs = item.source_refs || [];
+  return refs.length ? refs.map(ref => `${ref.segment_id} ${timecode(ref.start_ms)} ${ref.quote || ''}\n${ref.matched_text || ref.text || ''}${ref.matched === 'fuzzy' ? '（原文有字词差异，待核对）' : ''}`).join('\n') : (item.source_quote || '暂无出处，请核对');
 }

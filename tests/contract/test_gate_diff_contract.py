@@ -1,7 +1,6 @@
 """C5 无状态差异、投影与本轮确认的真实 HTTP 合同。"""
 from copy import deepcopy
 import pytest
-from mmwf.domain.minutes.validator import diff_versions, summarize_blocks
 from mmwf.infra.db import connect_ctx
 
 
@@ -88,16 +87,13 @@ def test_g3_vectors(gate_env, base, edited):
     result = e.client.post(e.base + '/gate/G2/decide', json={
         'checkpoint_id': e.pending['checkpoint_id'], 'decision': 'approve', 'operator': '秘书'}).json()
     checkpoint = result['data']['pending_gate']['checkpoint_id']
-    # 固定本轮系统稿测试向量，不替换 diff 或 resume 实现。
-    with e.rt.runner(e.mid) as runner:
-        runner.app.update_state(runner._cfg, {'minutes_markdown': base}, as_node='assemble')
-        runner.app.invoke(None, runner._cfg)
-        checkpoint = runner.status().pending_gate.checkpoint_id
+    # D07：旧任意正文向量不再是合法的业务编辑；保留它们作为 HTTP 拒绝反例。
     before = snapshot(e)
-    body = diff(e, 'G3', {'minutes_markdown': edited}, checkpoint)
-    assert body['ok'], body
-    expected = diff_versions(base, edited)
-    assert body['data'] == {'segments': expected, 'summary': summarize_blocks(expected)}
+    legacy = diff(e, 'G3', {'minutes_markdown': edited}, checkpoint)
+    assert not legacy['ok'] and legacy['code'] == 'E4001'
     assert snapshot(e) == before
-    if base.count('段') == 100:
-        assert expected[0]['elided'] > 0
+    body = diff(e, 'G3', {'minutes': {'topics': [{'name': '预算执行议题'}, {}]}}, checkpoint)
+    assert body['ok'], body
+    assert body['data']['summary']['changed'] > 0
+    assert body['data']['minutes_markdown']
+    assert snapshot(e) == before

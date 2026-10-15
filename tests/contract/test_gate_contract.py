@@ -22,7 +22,7 @@ def test_three_states(gate_env, gate, decision):
             items[0]["title"] = "预算执行安排"
             payload = {"topics": items}
         else:
-            payload = {"minutes_markdown": "# 人工审定\n\n已核对。"}
+            payload = {"minutes": {"topics": [{"name": "人工修正预算议题"}, {}]}}
     body = decide(e, gate.lower(), pending["checkpoint_id"], decision, payload)
     assert body["ok"], body
     data = body["data"]

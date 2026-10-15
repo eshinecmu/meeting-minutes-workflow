@@ -50,7 +50,7 @@ def write_old_checkpoint(runtime, stop="gate_g2", missing_source=False):
     app = graph.compile(checkpointer=saver, interrupt_before=[stop] if stop == "assemble" else [])
     cfg = thread_config("d4")
     app.invoke({"meeting_id": "d4", "task_id": "d4"}, cfg)
-    if stop == "assemble":
+    if stop in {"assemble", "gate_g3"}:
         from langgraph.types import Command
         app.invoke(Command(resume={"decision": "approve"}), cfg)
     snapshot = app.get_state(cfg)
@@ -113,3 +113,75 @@ def test_frozen_next_assemble_adapts_and_rechecks(runtime, missing_source):
             assert runner.status().pending_gate.gate == "G3"
             assert "决定按计划实施" in runner.values()["minutes_markdown"]
         assert all(runner.run_counts().get(n, 0) == 0 for n in ("transcribe", "extract", "generate", "export"))
+
+
+@pytest.mark.parametrize("decision", ["approve", "edit", "reject"])
+@pytest.mark.parametrize("missing_source", [False, True])
+def test_frozen_g3_service_precheck(runtime, decision, missing_source, monkeypatch):
+    from mmwf.app.services.gate import GateService
+    from mmwf.domain.errors import MmwfError
+    from mmwf.graph import nodes as N
+
+    # 冻结旧 schema 继续到旧 G3；重开新 runner 前关闭旧连接。
+    # write_old_checkpoint 可直接写 G3，仍由旧图生成原稿。
+    before, counts, checkpoint_id = write_old_checkpoint(runtime, stop="gate_g3", missing_source=missing_source)
+    original_counts = deepcopy(counts)
+    service = GateService(runtime)
+    payload = {"minutes": {"title": "研究方案会议"}} if decision == "edit" else None
+    with runtime.runner("d4") as runner:
+        assert runner.status().pending_gate.gate == "G3"
+        assert runner.status().pending_gate.checkpoint_id == checkpoint_id
+        assert runner.values() == before
+    # 交付属于 D5b；此处只观察 G3 增量，不生成文件。
+    monkeypatch.setattr(N, "make_export", lambda d: lambda s: {"export_paths": {"docx": "test-only"}})
+    if decision != "reject" and (missing_source or decision == "approve"):
+        with pytest.raises(MmwfError) as caught:
+            service.apply_decision("d4", "G3", checkpoint_id, decision, payload, "秘书", "")
+        assert caught.value.code == ("E3002" if missing_source else "E4001")
+        with runtime.runner("d4") as runner:
+            assert runner.values() == before
+            assert runner.status().pending_gate.checkpoint_id == checkpoint_id
+        assert service.store.get("d4", "G3", checkpoint_id) is None
+    elif decision == "edit":
+        result = service.apply_decision("d4", "G3", checkpoint_id, decision, payload, "秘书", "")
+        assert result["rerun_nodes"] == []
+        with runtime.runner("d4") as runner:
+            values = runner.values()
+            assert "研究方案" in values["minutes_markdown"]
+            assert values["minutes_structured"]["title"] == "研究方案会议"
+            assert values["issues"]
+            assert all(runner.run_counts().get(n, 0) == 0 for n in ("transcribe", "extract", "generate", "assemble"))
+    else:
+        # reject 仅重做 assemble；缺源会由既有 assemble 防线阻断。
+        if missing_source:
+            with pytest.raises(GroundingBlockedError):
+                service.apply_decision("d4", "G3", checkpoint_id, decision, payload, "秘书", "")
+        else:
+            result = service.apply_decision("d4", "G3", checkpoint_id, decision, payload, "秘书", "")
+            assert result["rerun_nodes"] == ["assemble"]
+    assert counts == original_counts
+
+
+def test_frozen_g3_minutes_read_supplies_desktop_canonical_structure(runtime):
+    from fastapi import APIRouter
+    from mmwf.api.routes.meetings import register
+
+    before, _, checkpoint_id = write_old_checkpoint(runtime, stop='gate_g3')
+    router = APIRouter()
+    register(router, runtime)
+    # 调用真实只读端点；桌面仅做静态合同，不启动浏览器。
+    endpoint = next(r.endpoint for r in router.routes if r.path == '/meetings/{meeting_id}/minutes')
+    response = endpoint(meeting_id='d4')
+    assert response['ok']
+    work = response['data']['minutes_structured']
+    assert isinstance(work['topics'], list) and work['topics']
+    for topic in work['topics']:
+        assert isinstance(topic['name'], str)
+        for kind in ('resolutions', 'action_items', 'pending_decisions'):
+            assert isinstance(topic.get(kind, []), list)
+            for item in topic.get(kind, []):
+                assert isinstance(item['content'], str)
+    assert response['data']['minutes_markdown'] == before['minutes_markdown']
+    with runtime.runner('d4') as runner:
+        assert runner.values() == before
+        assert runner.status().pending_gate.checkpoint_id == checkpoint_id

@@ -48,23 +48,69 @@ def normalise(value):
 
 
 def gate_content(gate, state):
-    keys = G2_FIELDS if gate == "G2" else ("minutes_markdown",)
-    return normalise({key: deepcopy(state.get(key, [] if gate == "G2" else "")) for key in keys})
+    if gate == "G3":
+        return {"minutes_markdown": state.get("minutes_markdown") or "",
+                "minutes": deepcopy(state.get("minutes_structured") or {})}
+    return normalise({key: deepcopy(state.get(key) or []) for key in G2_FIELDS})
+
+
+def edit_minutes(baseline, payload):
+    """递归补丁只改业务字段；列表长度、身份及证据均继承基线。"""
+    fields = {"": {"title", "meeting_time", "location", "host", "attendees", "recorder"},
+              "topics": {"name", "discussion", "readings"},
+              "item": {"content", "owner", "deadline"},
+              "pending": {"content", "owner", "deadline", "decision_maker"}}
+    children = {"": {"topics"}, "topics": {"resolutions", "action_items", "pending_decisions"}, "item": set(), "pending": set()}
+    def patch(old, new, kind):
+        if not isinstance(new, dict):
+            invalid("结构化纪要必须是对象")
+        out = deepcopy(old)
+        for key, value in new.items():
+            if key in children[kind]:
+                previous = old.get(key, [])
+                if not isinstance(value, list) or len(value) != len(previous):
+                    invalid("不允许新增、删除或迁移条目")
+                out[key] = [patch(a, b, "topics" if key == "topics" else ("pending" if key == "pending_decisions" else "item")) for a, b in zip(previous, value)]
+            elif key in fields[kind]:
+                if key in {"attendees", "readings"}:
+                    if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+                        invalid("字段必须是字符串列表")
+                    out[key] = [v.replace("\r\n", "\n") for v in value]
+                elif key == "deadline" and value is None:
+                    out[key] = None
+                elif isinstance(value, str):
+                    out[key] = value.replace("\r\n", "\n").replace("\r", "\n")
+                    if key in {"name", "content"} and not value.strip():
+                        invalid("议题和事项不得为空")
+                    if key == "owner" and not value.strip():
+                        out[key] = "暂无"
+                else:
+                    invalid("业务字段类型错误")
+            else:
+                # 客户端不能上传只读字段，即便与原值相同。
+                invalid(f"只读字段不得提交：{key}")
+        return out
+    return patch(baseline, payload, "")
 
 
 def validate_edit(gate, baseline, payload):
     """整列表替换；索引 / id 定位既有条目，不新增、删除或迁移归属。"""
-    allowed = set(G2_FIELDS) if gate == "G2" else {"minutes_markdown"}
+    allowed = set(G2_FIELDS) if gate == "G2" else {"minutes_markdown", "minutes"}
     if gate not in {"G2", "G3"} or not isinstance(payload, dict) or not payload or set(payload) - allowed:
         invalid("编辑载荷必须是非空对象，且仅含本闸口白名单字段")
     before = gate_content(gate, baseline)
     after = deepcopy(before)
     if gate == "G3":
-        value = payload["minutes_markdown"]
-        if not isinstance(value, str) or not value.strip():
-            invalid("纪要必须是非空字符串")
-        after["minutes_markdown"] = value
-        return normalise(after)
+        if "minutes" in payload:
+            after["minutes"] = edit_minutes(before["minutes"], payload["minutes"])
+        if "minutes_markdown" in payload:
+            value = payload["minutes_markdown"]
+            if not isinstance(value, str) or not value.strip():
+                invalid("纪要必须是非空字符串")
+            if "minutes" not in payload and "".join(value.split()) != "".join(before["minutes_markdown"].split()):
+                raise MmwfError(code="E4001", user_message="业务修改请使用结构化编辑。")
+            after["minutes_markdown"] = value.replace("\r\n", "\n").replace("\r", "\n")
+        return after
     for items in payload.values():
         if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
             invalid("编辑列表必须是对象列表")

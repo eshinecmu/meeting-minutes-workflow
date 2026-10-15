@@ -24,7 +24,8 @@ def test_each_real_decision_has_one_audit(gate_env, gate, decision):
             topics[0]['title'] = '验收人工修订'
             payload = {'topics': topics}
         else:
-            payload = {'minutes_markdown': '# 验收人工修订\n\n审定正文。'}
+            # D07 收紧旧 Markdown 合同；改导航标题并继承真实来源。
+            payload = {'minutes': {'topics': [{'name': '验收人工修订'}, {}]}}
     request = {'checkpoint_id': pending['checkpoint_id'], 'decision': decision,
                'operator': '验收秘书', 'payload': payload, 'comment': '自由备注不外泄'}
     url = e.base + f'/gate/{gate}/decide'
@@ -48,7 +49,12 @@ def test_each_real_decision_has_one_audit(gate_env, gate, decision):
     assert detail['after_sha256'] == fingerprint(snapshot['after'])
     assert '自由备注不外泄' not in rec.detail_raw and '验收人工修订' not in rec.detail_raw
     if decision == 'edit':
-        assert detail['changed_keys'] == ['topics[0].title' if gate == 'G2' else 'minutes_markdown']
+        if gate == 'G2':
+            assert detail['changed_keys'] == ['topics[0].title']
+        else:
+            assert 'minutes.topics[0].name' in detail['changed_keys']
+            assert 'minutes_markdown' in detail['changed_keys']
+            assert all('source_refs' not in key for key in detail['changed_keys'])
     else:
         assert detail['changed_keys'] == [] and detail['changed'] == {}
     assert verify_chain(e.rt.db_path).ok

@@ -16,7 +16,7 @@ def test_edit_and_checkpoint_wiring():
     assert 'pending.payload.topics' in js
     assert "['title', 'discussion', 'readings']" in js
     assert "['text', 'owner', 'deadline']" in js
-    assert 'draft.minutes_markdown = value' in js
+    assert 'draft = { minutes: editableMinutes' in js
     assert 'currentCheckpoint()' in js and '旧草稿已作废' in js
     assert 'draftReviewed.clear()' in js and 'draft = {}' in js
     assert 'submitting = true' in js and 'el.disabled = true' in js
@@ -46,3 +46,24 @@ def test_server_diff_and_styles():
     assert 'segment.elided' in js
     for name in ('changed', 'added', 'removed', 'unchanged'):
         assert re.search(r'\.diff-' + name + r'\s*\{[^}]*color:', css)
+
+
+def test_structured_preview_issues_and_download():
+    js = (ROOT / 'pages/gate.js').read_text()
+    client = (ROOT / 'api-client.js').read_text()
+    for text in ('data.minutes_markdown', 'data.issues', 'source_refs', 'issue-${issue.level}', 'FUZZY', '原文有字词差异，待核对', 'api.downloadIssues', 'pending_decisions'):
+        assert text in js
+    assert '/issues?format=text' in client
+    assert "'X-MMWF-Token': TOKEN" in client
+    assert 'URL.revokeObjectURL' in client
+
+
+def test_legacy_canonical_lists_and_readonly_sources_are_optional():
+    js = (ROOT / 'pages/gate.js').read_text()
+    assert 'editableMinutes(data.minutes_structured || {})' in js
+    assert '(value.topics || []).map' in js
+    assert '(topic[kind] || []).map' in js
+    assert 'data.minutes_structured?.topics?.[index] || {}' in js
+    assert 'sourceText(original[kind]?.[itemIndex])' in js
+    assert 'function sourceText(item = {})' in js
+    assert "return '暂无时间信息'" in js  # 施工卡 §2.3 固定缺时间文案。

@@ -107,3 +107,24 @@ export function gateRoundToken(pending) {
 export function gateRequest(roundToken, body) {
   return { ...body, [GATE_ROUND_KEY]: roundToken };
 }
+
+/** 问题清单下载使用同一令牌；错误仍按统一信封处理。 */
+export async function downloadIssues(meetingId, allowRetry = true) {
+  const res = await fetch(`${BASE}/meetings/${meetingId}/issues?format=text`, {
+    headers: { 'X-MMWF-Token': TOKEN },
+  });
+  if ((res.headers.get('content-type') || '').includes('application/json')) {
+    const env = await res.json();
+    if (env.code === E_SESSION_EXPIRED && allowRetry) {
+      await refreshToken();
+      return downloadIssues(meetingId, false);
+    }
+    throw new AppError(env.code, env.message);
+  }
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `issues-${meetingId}.txt`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

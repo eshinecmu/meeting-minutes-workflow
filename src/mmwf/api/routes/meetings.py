@@ -285,6 +285,10 @@ def register(router: APIRouter, rt: Runtime) -> None:
             try:
                 values = runner.values()
                 status = runner.status()
+                if status.pending_gate and status.pending_gate.gate == "G3":
+                    from mmwf.app.services.minutes import gate_baseline
+                    adapted, _, _ = gate_baseline(rt, meeting_id, values)
+                    values = {**values, "minutes_structured": adapted["minutes_structured"]}
             finally:
                 runner.close()
         return env.ok(
@@ -297,6 +301,28 @@ def register(router: APIRouter, rt: Runtime) -> None:
                 "status_label": status.status_label,
             }
         )
+
+    @router.get("/meetings/{meeting_id}/issues")
+    def get_issues(meeting_id: str = PathParam(...), format: str = "json"):
+        """只读同一清单的 JSON / UTF-8 表示，失败会议也可读取。"""
+        from fastapi.responses import Response
+        from mmwf.domain.minutes.issues import issues_payload, render_issues_text
+
+        _require_meeting(meeting_id, rt.db_path)
+        if format not in {"json", "text"}:
+            raise MmwfError(code="E4001", detail="问题清单格式必须为 json 或 text")
+        with rt.meeting_lock(meeting_id), rt.runner(meeting_id) as runner:
+            values = runner.values()
+        context = (values.get("minutes") or {}).get("_context", {})
+        options = {"complete": "issues" in values,
+                   "source_fingerprint": context.get("source_fingerprint", "")}
+        issues = values.get("issues") or []
+        if format == "text":
+            return Response(render_issues_text(meeting_id, issues, **options,
+                            source_version=context.get("source_version", "")),
+                            media_type="text/plain; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="issues-{meeting_id}.txt"'})
+        return env.ok(issues_payload(meeting_id, issues, **options))
 
     @router.get("/meetings/{meeting_id}/record")
     def get_record(

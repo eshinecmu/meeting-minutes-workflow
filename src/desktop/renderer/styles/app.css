@@ -205,3 +205,7 @@ textarea { min-height: 160px; resize: vertical; line-height: var(--lh); }
 .diff-unchanged { color: #6c757d; background: #f1f3f5; }
 .low-confidence { color: #842029; font-weight: bold; }
 .factor textarea { display: block; width: 100%; min-height: 4em; }
+
+/* required 为提醒，继续与否仍由服务端 blocking 判断。 */
+.issue-error, .issue-warning { color: #a32626; }
+.issue-info { color: #315b81; }

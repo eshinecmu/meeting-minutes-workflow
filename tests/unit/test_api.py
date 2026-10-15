@@ -210,6 +210,7 @@ class TestToken:
             ("POST", f"{API}/meetings/m-x/gate/G2/decide"),
             ("GET", f"{API}/meetings/m-x/minutes"),
             ("GET", f"{API}/meetings/m-x/record"),
+            ("GET", f"{API}/meetings/m-x/issues"),
             ("POST", f"{API}/meetings/m-x/export"),
             ("POST", f"{API}/meetings/m-x/export/undo"),
             ("GET", f"{API}/system/selfcheck"),
@@ -297,6 +298,8 @@ class TestToken:
             # T2-03 新增，Claude 按规则 9 裁决（D11）。
             ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/diff"),
             ("GET", f"{API}/meetings/{{meeting_id}}/minutes"),
+            # T2-04 D10：同一问题清单的 JSON / text 只读表示。
+            ("GET", f"{API}/meetings/{{meeting_id}}/issues"),
             ("GET", f"{API}/meetings/{{meeting_id}}/record"),
             ("POST", f"{API}/meetings/{{meeting_id}}/export"),
             ("POST", f"{API}/meetings/{{meeting_id}}/export/undo"),
@@ -317,7 +320,7 @@ class TestToken:
             ("POST", f"{API}/meetings/{{meeting_id}}/audio"),
             # T1-16 收口为 SAD 30 条 + 1 条导出方法守卫。
             # T2-02 新增 2 个 owner 已批准的模板历史端点：
-            # SAD 33 条 / 路由表 34 条 / 去重路径 29 条（含 T2-03）。
+            # SAD 34 条 / 路由表 35 条 / 去重路径 30 条（含 T2-04 D10）。
             ("GET", f"{API}/templates"),
             ("POST", f"{API}/templates"),
             ("PUT", f"{API}/templates/{{template_id}}"),
@@ -332,50 +335,17 @@ class TestToken:
         assert not stale, f"清单里有已不存在的端点：{sorted(stale)}"
         unlisted = actual - declared
         assert not unlisted, f"路由表有未登记的端点（潜在裸奔）：{sorted(unlisted)}"
-        assert len(actual) == 34, f"端点总数变了：{len(actual)}（清单 34 条）"
+        assert len(actual) == 35, f"端点总数变了：{len(actual)}（清单 35 条）"
 
         # ── SAD §9.1 收口核对（这才是"进度对照"的权威口径）──────────────
-        # 判据不是"数够 33 个数字"，而是**逐条点名**：
+        # 判据不是"数够 34 个数字"，而是**逐条点名**：
         # SAD 里列的每一条都必须真的在路由表里；多出来的只能是我们
         # **明确知道并写下理由**的那些（当前恰好 1 条方法守卫）。
         # 这样将来任何人删掉一条 SAD 端点，这里会指名报出是哪条。
-        sad_expected = {
-            ("POST", f"{API}/system/handshake"),
-            ("POST", f"{API}/meetings"),
-            ("POST", f"{API}/meetings/{{meeting_id}}/audio"),
-            ("GET", f"{API}/meetings"),
-            ("GET", f"{API}/meetings/{{meeting_id}}"),
-            ("POST", f"{API}/meetings/{{meeting_id}}/start"),
-            ("GET", f"{API}/meetings/{{meeting_id}}/transcript"),
-            ("PATCH", f"{API}/segments/{{segment_id}}"),
-            ("POST", f"{API}/meetings/{{meeting_id}}/review/accept"),
-            ("GET", f"{API}/meetings/{{meeting_id}}/record"),
-            ("GET", f"{API}/meetings/{{meeting_id}}/topics"),
-            ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/decide"),
-            # T2-03 新增，Claude 按规则 9 裁决（D11）。
-            ("POST", f"{API}/meetings/{{meeting_id}}/gate/{{gate}}/diff"),
-            ("GET", f"{API}/meetings/{{meeting_id}}/minutes"),
-            ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
-            ("POST", f"{API}/meetings/{{meeting_id}}/export"),
-            ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file}}"),
-            ("POST", f"{API}/meetings/{{meeting_id}}/export/undo"),
-            ("GET", f"{API}/glossary"),
-            ("POST", f"{API}/glossary"),
-            ("PUT", f"{API}/glossary/{{entry_id}}"),
-            ("DELETE", f"{API}/glossary/{{entry_id}}"),
-            ("POST", f"{API}/glossary/import"),
-            ("GET", f"{API}/glossary/export"),
-            ("GET", f"{API}/templates"),
-            ("POST", f"{API}/templates"),
-            ("PUT", f"{API}/templates/{{template_id}}"),
-            ("GET", f"{API}/templates/{{template_id}}/versions"),
-            ("GET", f"{API}/templates/{{template_id}}/versions/{{version_no}}"),
-            ("GET", f"{API}/audit/logs"),
-            ("POST", f"{API}/audit/export"),
-            ("GET", f"{API}/system/selfcheck"),
-            ("GET", f"{API}/system/fonts"),
-        }
-        assert len(sad_expected) == 33, f"SAD 清单自身数错了：{len(sad_expected)}"
+        # 与验收工具共享 SAD 清单；无令牌清单仍独立维护并双向核对。
+        from tools.accept_t1_17 import SAD_9_1
+
+        sad_expected = SAD_9_1
         missing = sad_expected - actual
         assert not missing, f"SAD §9.1 里有端点没实现：{sorted(missing)}"
         extra = actual - sad_expected
