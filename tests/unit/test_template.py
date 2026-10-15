@@ -445,3 +445,200 @@ def test_hot_binding_order_and_builtin_load_has_no_writes(db_path, tmp_path):
     assert store.select().name == "同版热改纪要"
     with connect_ctx(db_path) as conn:
         assert conn.execute("SELECT count(*) FROM template").fetchone()[0] == 0
+
+
+class TestDbHistory:
+    def test_full_snapshots_survive_reopen(self, store, db_path):
+        """POST v1 / 两次 PUT：正文、顺序、规则和启用状态各版完整保留。"""
+        from mmwf.infra.db import connect_ctx
+
+        expected = []
+        for i in range(1, 4):
+            tpl = parse_template(_flat_body(
+                name=f"第{i}版", version=999, enabled=i != 2,
+                required_elements=[{"key": "attendees", "label": f"出席{i}", "min_count": i}],
+                section_order=[f"章节{i}"], style={"readings_allowed": [f"标签{i}"]},
+            ), source=SOURCE_DB)
+            saved = (store.create(tpl, template_id="history") if i == 1
+                     else store.update(tpl, template_id="history"))
+            assert saved.version_no == i
+            expected.append(saved.to_dict())
+        reopened = make_template_store(db_path, config_dir=CONFIG_DIR)
+        assert reopened.list_versions("history") == [1, 2, 3]
+        assert [reopened.get_version("history", n).to_dict() for n in [1, 2, 3]] == expected
+        with connect_ctx(db_path) as conn:
+            rows = conn.execute("SELECT snapshot_json, captured_at FROM template_revision ORDER BY version_no").fetchall()
+        import json
+        assert [json.loads(r[0]) for r in rows] == expected
+        assert all(r[1] for r in rows)
+
+    @pytest.mark.parametrize("operation", ["create", "update"])
+    def test_snapshot_failure_rolls_back_template_row(self, store, db_path, operation):
+        """注入真实 DB 快照写入失败，不能留下半次 POST / PUT。"""
+        from mmwf.infra.db import connect_ctx
+        import sqlite3
+
+        tpl = parse_template(_flat_body(), source=SOURCE_DB)
+        if operation == "update":
+            before = store.create(tpl, template_id="rollback").to_dict()
+        with connect_ctx(db_path) as conn:
+            conn.execute("""CREATE TRIGGER fail_revision BEFORE INSERT ON template_revision
+                BEGIN SELECT RAISE(ABORT, '注入快照失败'); END""")
+        with pytest.raises(sqlite3.IntegrityError, match="注入快照失败"):
+            getattr(store, operation)(parse_template(_flat_body(name="不能留下"), source=SOURCE_DB),
+                                      template_id="rollback")
+        if operation == "create":
+            assert store.get("rollback") is None
+            with connect_ctx(db_path) as conn:
+                assert conn.execute("SELECT count(*) FROM template_revision").fetchone()[0] == 0
+        else:
+            assert store.get("rollback").to_dict() == before
+            assert store.list_versions("rollback") == [1]
+            assert store.get_version("rollback", 1).to_dict() == before
+
+    def test_concurrent_puts_read_version_under_write_lock(self, store):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+
+        store.create(parse_template(_flat_body(), source=SOURCE_DB), template_id="concurrent")
+        barrier = Barrier(2)
+
+        def put(name):
+            barrier.wait(timeout=5)
+            return store.update(parse_template(_flat_body(name=name), source=SOURCE_DB),
+                                template_id="concurrent")
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(put, ["并发甲", "并发乙"]))
+        assert sorted(t.version_no for t in results) == [2, 3]
+        assert store.list_versions("concurrent") == [1, 2, 3]
+        for tpl in results:
+            assert store.get_version("concurrent", tpl.version_no).to_dict() == tpl.to_dict()
+        assert store.get("concurrent").to_dict() == store.get_version("concurrent", 3).to_dict()
+
+    def test_migration_only_snapshots_current_and_is_idempotent(self, tmp_path):
+        import json
+        from mmwf.infra.db import connect_ctx
+        from mmwf.infra.migrations.runner import apply_migration, discover_migrations, migrate
+
+        path = tmp_path / "old.db"
+        first, second = discover_migrations()
+        tpl = parse_template(_flat_body(version=7), source=SOURCE_DB)
+        payload = tpl.to_row_payload()
+        with connect_ctx(path) as conn:
+            apply_migration(conn, first)
+            conn.execute("INSERT INTO template VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                         ("old", tpl.name, tpl.meeting_kind, payload["schema_json"],
+                          payload["style_json"], 7, 1, "2026-10-14"))
+        assert migrate(path) == migrate(path) == 2
+        st = make_template_store(path)
+        assert st.list_versions("old") == [7]
+        assert st.get_version("old", 7).to_dict() == st.get("old").to_dict()
+        with connect_ctx(path) as conn:
+            original = conn.execute("SELECT * FROM template_revision").fetchall()
+            # 即便显式重放 SQL，也不覆盖同版正文或捕获时间。
+            apply_migration(conn, second)
+            assert [tuple(r) for r in conn.execute("SELECT * FROM template_revision")] == [tuple(r) for r in original]
+            assert json.loads(original[0][2]) == st.get("old").to_dict()
+        with pytest.raises(TemplateFormatError):
+            st.get_version("old", 1)
+
+    def test_builtin_same_version_hot_edit_never_writes_db(self, db_path, tmp_path):
+        from mmwf.infra.db import connect_ctx
+        from mmwf.domain.errors import InputError
+
+        directory = tmp_path / "cfg" / "templates"
+        directory.mkdir(parents=True)
+        path = directory / "regular.yaml"
+        text = (CONFIG_DIR / "templates" / "regular-meeting.yaml").read_text("utf-8")
+        path.write_text(text, encoding="utf-8")
+        st = make_template_store(db_path, config_dir=directory.parent)
+        before = st.get("tpl-regular-meeting-v1")
+        path.write_text(text.replace("会议基本情况", "热改首段"), encoding="utf-8")
+        after = st.get("tpl-regular-meeting-v1")
+        assert after.version_no == before.version_no
+        assert after.section_order != before.section_order
+        st.list_templates()
+        for query in [lambda: st.list_versions(before.template_id),
+                      lambda: st.get_version(before.template_id, 1)]:
+            with pytest.raises(InputError, match="内置模板历史由 git 和 meta.version 管理"):
+                query()
+        with connect_ctx(db_path) as conn:
+            assert conn.execute("SELECT count(*) FROM template").fetchone()[0] == 0
+            assert conn.execute("SELECT count(*) FROM template_revision").fetchone()[0] == 0
+
+    @pytest.mark.parametrize("version", [0, -1, True, "1", 1.5])
+    def test_invalid_version_is_e1001(self, store, version):
+        with pytest.raises(TemplateFormatError) as exc:
+            store.get_version("missing", version)
+        assert exc.value.code == "E1001"
+
+    def test_shadowed_db_snapshot_is_db_content(self, store, db_path):
+        from mmwf.infra.db import connect_ctx
+        import json
+
+        saved = store.create(parse_template(_flat_body(name="撞名自建"), source=SOURCE_DB),
+                             template_id="tpl-regular-meeting-v1")
+        assert saved.source == SOURCE_DB and saved.name == "撞名自建"
+        with connect_ctx(db_path) as conn:
+            data = json.loads(conn.execute("SELECT snapshot_json FROM template_revision").fetchone()[0])
+        assert data == saved.to_dict()
+
+
+    def test_shadowed_builtin_put_is_rejected_and_history_is_unsupported(self, store, db_path):
+        """撞名 DB 行不改变 builtin 优先语义，PUT 和历史查询均以 builtin 为准。"""
+        from mmwf.domain.errors import InputError
+        from mmwf.infra.db import connect_ctx
+
+        tid = "tpl-regular-meeting-v1"
+        saved = store.create(parse_template(_flat_body(name="撞名自建"), source=SOURCE_DB),
+                             template_id=tid)
+        with pytest.raises(TemplateBuiltinError) as exc:
+            store.update(parse_template(_flat_body(name="不能改"), source=SOURCE_DB),
+                         template_id=tid)
+        assert exc.value.code == "E1003"
+        assert store.get(tid).is_builtin
+        for query in [lambda: store.list_versions(tid), lambda: store.get_version(tid, 1)]:
+            with pytest.raises(InputError) as exc:
+                query()
+            assert exc.value.code == "E1001"
+            assert "内置模板历史由 git 和 meta.version 管理" in exc.value.user_message
+        # 绕过 builtin 读取 DB，确认拒绝操作没有改变行或历史。
+        db_only = make_template_store(db_path)
+        assert db_only.get(tid).to_dict() == saved.to_dict()
+        assert db_only.list_versions(tid) == [1]
+        assert db_only.get_version(tid, 1).to_dict() == saved.to_dict()
+        with connect_ctx(db_path) as conn:
+            assert conn.execute("SELECT count(*) FROM template_revision").fetchone()[0] == 1
+
+    @pytest.mark.parametrize("missing", ["required_elements", "section_order", "both"])
+    def test_migration_preserves_invalid_legacy_schema_without_inventing_content(self, tmp_path, missing):
+        """旧坏行仍可迁移；缺失结构保留缺失，领域查询沿用 E1001，不伪造正文。"""
+        import json
+        from mmwf.infra.db import connect_ctx
+        from mmwf.infra.migrations.runner import apply_migration, discover_migrations, migrate
+
+        path = tmp_path / "legacy.db"
+        tpl = parse_template(_flat_body(), source=SOURCE_DB)
+        payload = tpl.to_row_payload()
+        schema = json.loads(payload["schema_json"])
+        for key in ["required_elements", "section_order"]:
+            if missing in [key, "both"]:
+                del schema[key]
+        with connect_ctx(path) as conn:
+            apply_migration(conn, discover_migrations()[0])
+            conn.execute("INSERT INTO template VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                         ("legacy", tpl.name, tpl.meeting_kind, json.dumps(schema),
+                          payload["style_json"], 7, 1, "2026-10-14"))
+        assert migrate(path) == migrate(path) == 2
+        with connect_ctx(path) as conn:
+            rows = conn.execute("SELECT version_no, snapshot_json FROM template_revision").fetchall()
+        assert len(rows) == 1 and rows[0][0] == 7
+        snapshot = json.loads(rows[0][1])
+        for key in ["required_elements", "section_order"]:
+            assert snapshot[key] == schema.get(key)
+        store = make_template_store(path)
+        for query in [lambda: store.get("legacy"), lambda: store.get_version("legacy", 7)]:
+            with pytest.raises(TemplateFormatError) as exc:
+                query()
+            assert exc.value.code == "E1001"

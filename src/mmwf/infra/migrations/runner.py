@@ -191,7 +191,7 @@ def expected_tables() -> list[str]:
     return [
         "meeting", "audio_file", "transcript_segment", "topic", "resolution",
         "action_item", "pending_decision", "minutes_version", "glossary_entry",
-        "template", "task_state", "idempotency_record", "audit_log",
+        "template", "template_revision", "task_state", "idempotency_record", "audit_log",
     ]
 
 

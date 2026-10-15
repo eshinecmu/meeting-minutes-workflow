@@ -303,3 +303,52 @@ class TestUpdateTemplate:
         assert len(recs) == 2, f"应有 2 条（create+update），实际 {len(recs)}"
         ops = {r.detail.get("op") for r in recs}
         assert ops == {"create", "update"}
+
+
+class TestTemplateHistory:
+    def test_three_versions_have_distinct_full_bodies(self, client):
+        expected = []
+        for i in range(1, 4):
+            body = _body(template_id="history", name=f"正文{i}", version=999,
+                         section_order=[f"章节{i}"], style={"readings_allowed": [f"标签{i}"]})
+            response = (client.post(f"{API}/templates", json=body) if i == 1
+                        else client.put(f"{API}/templates/history", json=body))
+            assert response.json()["ok"] is True
+            expected.append(response.json()["data"]["template"])
+        listing = client.get(f"{API}/templates/history/versions").json()
+        assert listing["ok"] is True
+        assert listing["data"]["versions"] == [1, 2, 3]
+        for i, snapshot in enumerate(expected, 1):
+            response = client.get(f"{API}/templates/history/versions/{i}").json()
+            assert response["ok"] is True
+            assert response["data"]["template"] == snapshot
+
+    @pytest.mark.parametrize("suffix", ["versions", "versions/1"])
+    def test_existing_auth(self, anon_client, suffix):
+        response = anon_client.get(f"{API}/templates/history/{suffix}")
+        assert response.json()["code"] == "E6001"
+
+    @pytest.mark.parametrize("suffix", ["versions", "versions/1"])
+    def test_builtin_message(self, client, suffix):
+        response = client.get(f"{API}/templates/tpl-regular-meeting-v1/{suffix}").json()
+        assert response["code"] == "E1001"
+        assert "内置模板历史由 git 和 meta.version 管理" in response["message"]
+
+    @pytest.mark.parametrize("suffix", ["versions", "versions/1"])
+    def test_missing_template(self, client, suffix):
+        assert client.get(f"{API}/templates/nope/{suffix}").json()["code"] == "E1001"
+
+    @pytest.mark.parametrize("version", ["0", "-1", "abc", "1.5", "999"])
+    def test_invalid_or_missing_version(self, client, version):
+        client.post(f"{API}/templates", json=_body(template_id="history"))
+        response = client.get(f"{API}/templates/history/versions/{version}")
+        assert response.json()["code"] == "E1001"
+        _no_500(response)
+
+    def test_routes_have_no_source_parameter(self, settings):
+        from mmwf.api.routes import build_router
+
+        routes = [r for r in build_router(settings).routes
+                  if "/versions" in getattr(r, "path", "") and "/templates/" in r.path]
+        assert len(routes) == 2
+        assert all(not r.dependant.query_params for r in routes)

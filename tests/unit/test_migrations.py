@@ -1,7 +1,9 @@
 """T1-02 验收测试：数据模型与建表。
 
+T2-02 新增历史表后，最新库为 14 表 / user_version=2；原约束继续回归。
+
 对应施工卡 T1-02 的四条验收标准：
-  1. 全新目录执行建库，13 张表齐全
+  1. 全新目录执行建库，14 张表齐全
   2. PRAGMA foreign_keys 返回 1，且外键**真实生效**（不是摆设）
   3. test_audit_log_immutable：UPDATE / DELETE 审计表必须抛异常
   4. test_foreign_key_enforced：插入不存在 meeting_id 的 segment 必须失败
@@ -80,14 +82,14 @@ def _insert_meeting(conn: sqlite3.Connection, meeting_id: str = MEETING_ID) -> N
 
 
 # ---------------------------------------------------------------------------
-# 标准 1：13 张表齐全
+# 标准 1：14 张表齐全
 # ---------------------------------------------------------------------------
 
-def test_fresh_db_has_all_13_tables(db: sqlite3.Connection):
-    """标准 1：全新目录建库后，13 张业务表一张不少。"""
+def test_fresh_db_has_all_14_tables(db: sqlite3.Connection):
+    """标准 1：全新目录建库后，14 张业务表一张不少。"""
     tables = list_tables(db)
     expected = sorted(expected_tables())
-    assert len(expected) == 13, "expected_tables() 本身应为 13 张"
+    assert len(expected) == 14, "expected_tables() 本身应为 14 张"
     assert tables == expected, f"建表结果与预期不符\n实际：{tables}\n预期：{expected}"
 
 
@@ -101,7 +103,7 @@ def test_no_unexpected_tables(db: sqlite3.Connection):
     [
         "meeting", "audio_file", "transcript_segment", "topic", "resolution",
         "action_item", "pending_decision", "minutes_version", "glossary_entry",
-        "template", "task_state", "idempotency_record", "audit_log",
+        "template", "template_revision", "task_state", "idempotency_record", "audit_log",
     ],
 )
 def test_table_is_queryable(db: sqlite3.Connection, table_name: str):
@@ -379,20 +381,20 @@ def test_migration_file_discovery():
     assert migs[0].name == "init"
 
 
-def test_migrate_on_fresh_db_sets_version_1(db_path: Path):
-    """新库执行迁移后 user_version = 1。"""
-    assert migrate(db_path) == 1
+def test_migrate_on_fresh_db_sets_version_2(db_path: Path):
+    """新库执行迁移后 user_version = 2。"""
+    assert migrate(db_path) == 2
 
 
 def test_migrate_is_idempotent(db_path: Path):
     """标准（附加）：重复执行迁移不报错、版本号不倒退。"""
-    assert migrate(db_path) == 1
-    assert migrate(db_path) == 1
-    assert migrate(db_path) == 1
+    assert migrate(db_path) == 2
+    assert migrate(db_path) == 2
+    assert migrate(db_path) == 2
 
     with connect(db_path) as conn:
-        assert get_user_version(conn) == 1
-        assert len(list_tables(conn)) == 13
+        assert get_user_version(conn) == 2
+        assert len(list_tables(conn)) == 14
 
 
 def test_migrate_idempotent_preserves_data(db_path: Path):
@@ -546,14 +548,14 @@ def test_broken_sql_raises_and_leaves_version_unchanged(db_path: Path):
     migrate(db_path)
 
     bad = discover_migrations()[0]
-    broken = type(bad)(version=2, name="broken",
-                       path=db_path.parent / "002_broken.sql")
+    broken = type(bad)(version=3, name="broken",
+                       path=db_path.parent / "003_broken.sql")
     broken.path.write_text("CREATE TABLE ((( ;", encoding="utf-8")
 
     with connect(db_path) as conn:
-        with pytest.raises(MigrationError, match="002_broken"):
+        with pytest.raises(MigrationError, match="003_broken"):
             apply_migration(conn, broken)
-        assert get_user_version(conn) == 1, "失败的迁移不应推进版本号"
+        assert get_user_version(conn) == 2, "失败的迁移不应推进版本号"
 
 
 def test_missing_migrations_dir_raises(tmp_path: Path):

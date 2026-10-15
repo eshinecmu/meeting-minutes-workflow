@@ -13,7 +13,7 @@ from fastapi import APIRouter, Body, Path as PathParam
 
 from mmwf.api import envelope as env
 from mmwf.domain.errors import MmwfError
-from mmwf.domain.template import SOURCE_DB
+from mmwf.domain.template import SOURCE_DB, TemplateFormatError
 
 from ._context import Runtime
 from ._support import DEFAULT_OPERATOR
@@ -72,6 +72,19 @@ def register(router: APIRouter, rt: Runtime) -> None:
         if problems:
             msg += f" 有 {len(problems)} 个模板文件没能读取，详见 warning。"
         return env.ok(data, msg)
+
+    @router.get("/templates/{template_id}/versions")
+    def list_template_versions(template_id: str):
+        """DB 自建模板的可用历史版本；复用路由器鉴权。"""
+        return env.ok({"versions": rt.template_store().list_versions(template_id)})
+
+    @router.get("/templates/{template_id}/versions/{version_no}")
+    def get_template_version(template_id: str, version_no: str):
+        """单版完整快照；参数错误沿用 E1001 信封。"""
+        if not version_no.isascii() or not version_no.isdigit() or int(version_no) < 1:
+            raise TemplateFormatError("版本号必须为正整数", field="version_no")
+        tpl = rt.template_store().get_version(template_id, int(version_no))
+        return env.ok({"template": tpl.to_dict()})
 
     @router.post("/templates")
     def create_template(payload: dict[str, Any] = Body(default={})):

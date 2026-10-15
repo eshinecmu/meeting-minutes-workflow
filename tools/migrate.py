@@ -22,6 +22,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from mmwf.infra.db import app_db_path, connect, connect_ctx, pragma_value  # noqa: E402
 from mmwf.infra.migrations.runner import (  # noqa: E402
     discover_migrations,
+    expected_tables,
     get_user_version,
     list_tables,
     migrate,
@@ -84,7 +85,7 @@ def main() -> int:
 
     print()
     print(f"{'✓' if fk == 1 else '✗'} PRAGMA foreign_keys = {fk}")
-    print(f"{'✓' if len(tables) == 13 else '✗'} 业务表 {len(tables)} 张：{tables}")
+    print(f"{'✓' if len(tables) == len(expected_tables()) else '✗'} 业务表 {len(tables)} 张：{tables}")
     print(f"{'✓' if version == latest else '✗'} user_version = {version}（最新 {latest}）")
     print(f"\n{'首次建库完成' if not existed else '迁移完成'}：{db_path}")
     return 0

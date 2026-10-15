@@ -84,7 +84,7 @@ def connect_ctx(db_path: Path | str, *, readonly: bool = False) -> Iterator[sqli
 
 
 @contextmanager
-def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+def transaction(conn: sqlite3.Connection, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
     """显式事务。正常退出提交，异常回滚并向上抛。
 
     注意：**不支持嵌套**。SQLite 没有真正的嵌套事务
@@ -92,7 +92,8 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     嵌套调用会因 "cannot start a transaction within a transaction" 报错——
     这是刻意保留的失败，比静默复用外层事务更安全。
     """
-    conn.execute("BEGIN")
+    # 需先读后写的业务可提前取得写锁，避免并发读取同一旧版本。
+    conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
     try:
         yield conn
     except BaseException:

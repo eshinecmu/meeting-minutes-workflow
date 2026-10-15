@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
+from mmwf.domain.errors import InputError
 from mmwf.domain.template import (
     SOURCE_BUILTIN,
     SOURCE_DB,
@@ -248,6 +250,57 @@ class TemplateStore:
             raise TemplateFormatError("该会议类型无唯一启用模板，请指定 template_id", field="meeting_kind")
         return result.templates[0]
 
+    # -- DB 历史（内置历史由 git 管理） -------------------------------------
+
+    def _check_history_id(self, template_id: str) -> None:
+        tpl = self.get(template_id)
+        if tpl is not None and tpl.is_builtin:
+            raise InputError(
+                code="E1001", detail="内置模板历史由 git 和 meta.version 管理",
+                user_message="内置模板历史由 git 和 meta.version 管理。",
+                context={"template_id": template_id},
+            )
+        if tpl is None:
+            raise TemplateFormatError(f"template_id={template_id!r} 不存在", field="template_id")
+
+    def list_versions(self, template_id: str) -> list[int]:
+        """只列出实际保存的版本，升序；迁移前已丢失的旧版不补造。"""
+        self._check_history_id(template_id)
+        with connect_ctx(self._db_path) as conn:
+            rows = conn.execute(
+                "SELECT version_no FROM template_revision WHERE template_id = ? ORDER BY version_no",
+                (template_id,),
+            ).fetchall()
+        return [row[0] for row in rows]
+
+    def get_version(self, template_id: str, version_no: int) -> MinutesTemplate:
+        """历史正文只读，不以当前模板冒充旧版。"""
+        if isinstance(version_no, bool) or not isinstance(version_no, int) or version_no < 1:
+            raise TemplateFormatError("版本号必须为正整数", field="version_no")
+        self._check_history_id(template_id)
+        with connect_ctx(self._db_path) as conn:
+            row = conn.execute(
+                "SELECT snapshot_json FROM template_revision WHERE template_id = ? AND version_no = ?",
+                (template_id, version_no),
+            ).fetchone()
+        if row is None:
+            raise TemplateFormatError("模板历史版本不存在", template_id=template_id, version_no=version_no)
+        data = json.loads(row[0])
+        # API 的 version_no 与解析器的 version 字段显式适配。
+        return parse_template({**data, "version": data["version_no"]}, source=SOURCE_DB)
+
+    @staticmethod
+    def _capture_revision(conn: Any, template_id: str, captured_at: str) -> MinutesTemplate:
+        """从本事务写入的 DB 行取完整快照，避免撞名 builtin 或并发后读错版本。"""
+        row = conn.execute("SELECT * FROM template WHERE template_id = ?", (template_id,)).fetchone()
+        fresh = template_from_row(dict(row))
+        conn.execute(
+            "INSERT INTO template_revision (template_id, version_no, snapshot_json, captured_at)"
+            " VALUES (?, ?, ?, ?)",
+            (template_id, fresh.version_no, json.dumps(fresh.to_dict(), ensure_ascii=False), captured_at),
+        )
+        return fresh
+
     # -- 写表 -------------------------------------------------------------
 
     def create(
@@ -297,8 +350,7 @@ class TemplateStore:
                         now,
                     ),
                 )
-        fresh = self.get(tid)
-        assert fresh is not None  # 刚插进去的
+                fresh = self._capture_revision(conn, tid, now)
         return fresh
 
     def update(
@@ -316,25 +368,21 @@ class TemplateStore:
            F7.2 要求「修改后 version 递增，历史版本可查」。
            让客户端传 = 允许它把版本号改回去或跳号。
         """
-        existing = self.get(template_id)
-        if existing is None:
-            raise TemplateFormatError(
-                f"template_id={template_id!r} 不存在",
-                field="template_id",
-                template_id=template_id,
-            )
-        if existing.is_builtin:
-            # ★ 这一步是"内置模板不可改"的**唯一执行点**。
-            #   没有它，PUT 会往表里插一条与内置同名的行 ——
-            #   然后 list_templates 里内置优先把它屏蔽掉，
-            #   用户看到"我改了，但没生效"，比报错难查十倍。
+        builtin, _ = self.load_builtin()
+        if any(t.template_id == template_id for t in builtin):
             raise TemplateBuiltinError(template_id)
 
-        nxt = int(existing.version_no) + 1
         now = _now_iso()
         payload = tpl.to_row_payload()
         with connect_ctx(self._db_path) as conn:
-            with transaction(conn):
+            # 写锁先于读版本：第二个 PUT 等前一个提交后再读取并递增。
+            with transaction(conn, immediate=True):
+                row = conn.execute(
+                    "SELECT version_no FROM template WHERE template_id = ?", (template_id,),
+                ).fetchone()
+                if row is None:
+                    raise TemplateFormatError(f"template_id={template_id!r} 不存在", field="template_id")
+                nxt = int(row[0]) + 1
                 cur = conn.execute(
                     "UPDATE template SET name = ?, meeting_kind = ?,"
                     " schema_json = ?, style_json = ?, version_no = ?,"
@@ -354,8 +402,7 @@ class TemplateStore:
                         f"template_id={template_id!r} 更新时没命中任何行",
                         field="template_id",
                     )
-        fresh = self.get(template_id)
-        assert fresh is not None
+                fresh = self._capture_revision(conn, template_id, now)
         return fresh
 
     def new_template_id(self) -> str:

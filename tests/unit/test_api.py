@@ -313,27 +313,14 @@ class TestToken:
             ("PATCH", f"{API}/segments/{{segment_id}}"),
             ("POST", f"{API}/meetings/{{meeting_id}}/review/accept"),
             ("POST", f"{API}/meetings/{{meeting_id}}/audio"),
-            # T1-16：模板 3 + 差异 1 + 导出下载 1 + 方法守卫 1（25 → 30 + 1）
-            #
-            # ⚠️ 记账口径要说清（本卡验收时把三个数字搅在一起过，差点写错结论）：
-            #
-            #   · **SAD §9.1 = 30 条**（method+path 口径）。
-            #     那张表 24 行，但 `/glossary` 与 `/templates` 两行是
-            #     `GET/POST/PUT/DELETE` 合写；展开再加一行表里没列、
-            #     但 F7.1 要求的 `/glossary/export`，正好 30。
-            #   · 本卡把 `GET /meetings/{id}/diff`、`GET /meetings/{id}/export/{file}`
-            #     和 `/templates` 的 3 条补齐，**SAD 30 条至此 100% 收口**。
-            #   · 另有 **1 条 SAD 里没有**的 `GET .../export/undo` 方法守卫
-            #     （坑 14），所以路由表是 **31 条**。
-            #
-            # 为什么 `actual` 是 31 而不是 30：它是 `(method, path)` 集合，
-            # `export/undo` 的 GET 与 POST 分开计。而 SAD 数的是端点，
-            # `export/undo` 只算一条。两边差 1 是**有意**的 ——
-            # 路由层面必须逐方法核对（否则守卫路由裸奔查不出来），
-            # 与 SAD 对照时再按路径去重。
+            # T1-16 收口为 SAD 30 条 + 1 条导出方法守卫。
+            # T2-02 新增 2 个 owner 已批准的模板历史端点：
+            # SAD 32 条 / 路由表 33 条 / 去重路径 28 条。
             ("GET", f"{API}/templates"),
             ("POST", f"{API}/templates"),
             ("PUT", f"{API}/templates/{{template_id}}"),
+            ("GET", f"{API}/templates/{{template_id}}/versions"),
+            ("GET", f"{API}/templates/{{template_id}}/versions/{{version_no}}"),
             ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
             ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file}}"),
             ("GET", f"{API}/meetings/{{meeting_id}}/export/undo"),
@@ -343,10 +330,10 @@ class TestToken:
         assert not stale, f"清单里有已不存在的端点：{sorted(stale)}"
         unlisted = actual - declared
         assert not unlisted, f"路由表有未登记的端点（潜在裸奔）：{sorted(unlisted)}"
-        assert len(actual) == 31, f"端点总数变了：{len(actual)}（清单 31 条）"
+        assert len(actual) == 33, f"端点总数变了：{len(actual)}（清单 33 条）"
 
         # ── SAD §9.1 收口核对（这才是"进度对照"的权威口径）──────────────
-        # 判据不是"数够 30 个数字"，而是**逐条点名**：
+        # 判据不是"数够 32 个数字"，而是**逐条点名**：
         # SAD 里列的每一条都必须真的在路由表里；多出来的只能是我们
         # **明确知道并写下理由**的那些（当前恰好 1 条方法守卫）。
         # 这样将来任何人删掉一条 SAD 端点，这里会指名报出是哪条。
@@ -377,12 +364,14 @@ class TestToken:
             ("GET", f"{API}/templates"),
             ("POST", f"{API}/templates"),
             ("PUT", f"{API}/templates/{{template_id}}"),
+            ("GET", f"{API}/templates/{{template_id}}/versions"),
+            ("GET", f"{API}/templates/{{template_id}}/versions/{{version_no}}"),
             ("GET", f"{API}/audit/logs"),
             ("POST", f"{API}/audit/export"),
             ("GET", f"{API}/system/selfcheck"),
             ("GET", f"{API}/system/fonts"),
         }
-        assert len(sad_expected) == 30, f"SAD 清单自身数错了：{len(sad_expected)}"
+        assert len(sad_expected) == 32, f"SAD 清单自身数错了：{len(sad_expected)}"
         missing = sad_expected - actual
         assert not missing, f"SAD §9.1 里有端点没实现：{sorted(missing)}"
         extra = actual - sad_expected
