@@ -182,7 +182,7 @@ def _split_table_cells(line: str) -> list[str]:
     return cells
 
 
-def parse_markdown(text: str) -> tuple[list[Block], list[str]]:
+def parse_markdown(text: str, *, decimal_numbering: bool = False) -> tuple[list[Block], list[str]]:
     """把 Markdown 解析成 Block 序列。返回 `(blocks, warnings)`。"""
     blocks: list[Block] = []
     warnings: list[str] = []
@@ -247,8 +247,12 @@ def parse_markdown(text: str) -> tuple[list[Block], list[str]]:
                     )
 
             # 统一编号：剥掉自带序号，再由 NumberingState 生成
-            clean = strip_heading_number(title_text) if has_heading_number(title_text) else title_text
-            prefix = heading_counter.next_prefix(style_level)
+            # §03 U-MN-10/P15 的数字层级模式；保留原公文编号默认值兼容旧稿。
+            clean = title_text
+            if decimal_numbering:
+                clean = re.sub(r"^\d+(?:\.\d+)*(?:[.、]|\s)\s*", "", clean)
+            clean = strip_heading_number(clean) if has_heading_number(clean) else clean
+            prefix = heading_counter.next_prefix(style_level, decimal=decimal_numbering)
             blocks.append(Block(kind="heading", text=f"{prefix}{clean}",
                                 level=style_level))
             i += 1
@@ -351,6 +355,8 @@ class RenderOptions:
     font_report: FontReport | None = None
     #: 显式的已装字体集合（测试用；None 走真实探测）。
     installed_fonts: set[str] | None = None
+    #: §03 数字层级编号（1 / 1.1 / 1.2.1）；默认保持既有公文编号。
+    decimal_numbering: bool = False
 
 
 def _style(key: str) -> GBStyle:
@@ -379,6 +385,9 @@ def _write_runs(paragraph: _Paragraph, text: str, style: GBStyle, *, actual_font
     都会在 Word 里表现成"英文生效、中文没生效"。
     """
     payload = normalize_text(text) if options.normalize_text else text
+    if options.normalize_text:
+        # §03 P19：导出不留半角引号；所有格保留语义，改用右弯撇号。
+        payload = payload.replace("'", "’")
     run = paragraph.add_run(payload)
     P.set_cjk_font(run, actual_font, style.size_pt, style.bold)
 
@@ -440,7 +449,7 @@ def render_markdown_to_docx(
             missing=report.missing,
         )
 
-    blocks, warnings = parse_markdown(markdown)
+    blocks, warnings = parse_markdown(markdown, decimal_numbering=opts.decimal_numbering)
     if not opts.auto_numbering:
         warnings.append("已关闭标题自动编号（auto_numbering=False）")
 

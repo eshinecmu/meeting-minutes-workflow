@@ -11,7 +11,11 @@
 
 from __future__ import annotations
 
+import io
+import zipfile
+
 import pytest
+from lxml import etree
 
 from mmwf.domain.docx import (
     add_cjk_latin_spaces,
@@ -20,6 +24,8 @@ from mmwf.domain.docx import (
     drop_spaces_between_cjk,
     normalize_text,
     to_halfwidth_digits,
+    RenderOptions,
+    render_markdown_to_docx,
 )
 
 
@@ -124,6 +130,31 @@ class TestQuoteConversion:
 
     def test_through_normalize(self):
         assert normalize_text('他说"这个方案"很好') == "他说\u201c这个方案\u201d很好"
+
+    @pytest.mark.parametrize("source,expected", [
+        ('他说"方案"与\'预算\'。', "他说“方案”与‘预算’。"),
+        ("meeting's agenda and don't", "meeting’s agenda and don’t"),
+        ('他说"尚未结束', "他说“尚未结束"),
+        ("“已有引号”及「原文」", "“已有引号”及「原文」"),
+    ])
+    def test_export_has_no_straight_quotes_in_any_text_block(self, source, expected):
+        # P19 裁决：按 §03 导出全文无半角引号；所有格用 ’，不当作开引号。
+        # convert_quotes 的既有纯文本所有格契约保留；此处检查最终 DOCX。
+        markdown = (f"# {source}\n\n## {source}\n\n{source}\n\n"
+                    f"- {source}\n\n表 1 {source}\n\n"
+                    f"| {source} | 备注 |\n| --- | --- |\n| {source} | 内容 |")
+        result = render_markdown_to_docx(markdown, options=RenderOptions(
+            installed_fonts={"方正小标宋简体", "黑体", "楷体_GB2312", "仿宋_GB2312",
+                             "宋体", "Times New Roman"},
+        ))
+        buf = io.BytesIO()
+        result.doc.save(buf)
+        with zipfile.ZipFile(buf) as archive:
+            root = etree.fromstring(archive.read("word/document.xml"))
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        texts = root.xpath("//w:t/text()", namespaces=ns)
+        assert sum(expected in text for text in texts) == 7
+        assert all('"' not in text and "'" not in text for text in texts)
 
 
 # ---------------------------------------------------------------------------

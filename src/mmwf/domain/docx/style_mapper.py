@@ -295,13 +295,15 @@ class NumberingState:
 
     counters: list[int] = field(default_factory=lambda: [0, 0, 0])
 
-    def next_prefix(self, level: int) -> str:
+    def next_prefix(self, level: int, *, decimal: bool = False) -> str:
         """推进到该级的下一号并返回前缀，同时清空更深层级。"""
         if level < 1 or level > 3:
             raise ValueError(f"标题层级只支持 1..3，收到 {level}")
         self.counters[level - 1] += 1
         for deeper in range(level, 3):
             self.counters[deeper] = 0
+        if decimal:
+            return ".".join(str(n) for n in self.counters[:level]) + " "
         return format_heading_number(level, self.counters[level - 1])
 
     def reset(self) -> None:

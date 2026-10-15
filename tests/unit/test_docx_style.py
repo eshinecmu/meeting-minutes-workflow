@@ -111,6 +111,20 @@ class TestCjkFont:
             assert "eastAsia" in f, "缺 w:eastAsia 中文会回退字体（U-DX-01）"
             assert f["eastAsia"] == "仿宋_GB2312"
 
+    def test_body_runs_are_16pt_in_saved_xml(self):
+        """P07：检查实际正文的每个文字 run，而非 GB_STYLES 常量。"""
+        paragraphs = ["会议讨论 API 接口。", "第二段包含 2026 年计划。"]
+        root = doc_xml(render("# 会议纪要\n\n" + "\n\n".join(paragraphs)))
+        body = [p for p in body_paragraphs(root)
+                if "".join(p.itertext()) in paragraphs]
+        assert len(body) == len(paragraphs)
+        for para in body:
+            runs = [r for r in para.iter(W + "r") if r.find(W + "t") is not None]
+            assert runs
+            for run in runs:
+                size = run.find(f"{W}rPr/{W}sz")
+                assert size is not None and size.get(W + "val") == "32"
+
     def test_all_four_attrs_set(self):
         """四个字体属性都要设，否则西文跟中文字体走。"""
         root = doc_xml(render("正文一段话"))
@@ -469,6 +483,39 @@ class TestTableBorders:
         root = doc_xml(render(md))
         assert len(list(root.iter(W + "tbl"))) == 2
 
+    def test_every_header_cell_is_heiti_and_bold(self):
+        """P12：每张表每个表头 run 同时具备黑体与有效的 w:b。"""
+        root = doc_xml(render(TABLE_MD + "\n第二张表\n\n" + TABLE_MD.split("正文一段。\n", 1)[1]))
+        tables = list(root.iter(W + "tbl"))
+        assert len(tables) == 2
+        for table in tables:
+            header = table.find(W + "tr")
+            cells = header.findall(W + "tc")
+            assert len(cells) == 3
+            for cell in cells:
+                runs = [r for r in cell.iter(W + "r") if r.find(W + "t") is not None]
+                assert runs
+                for run in runs:
+                    assert run_fonts(run)["eastAsia"] == "黑体"
+                    bold = run.find(f"{W}rPr/{W}b")
+                    assert bold is not None and bold.get(W + "val") in (None, "1", "true")
+
+    @pytest.mark.parametrize("tail", ["", "\n\n后续正文。", "\n\n## 后续标题"])
+    def test_table_captions_precede_tables_and_empty_paragraphs_follow(self, tail):
+        """P13/P14：§03 只要求已提供表号表名的位置，不推定自动命名。"""
+        table = "| 项目 | 责任人 |\n| --- | --- |\n| 预算 | 张三 |"
+        captions = ["表 1 预算安排", "表 2 责任分工"]
+        md = "# 会议纪要\n\n" + "\n\n".join(c + "\n\n" + table for c in captions) + tail
+        root = doc_xml(render(md))
+        tables = list(root.iter(W + "tbl"))
+        assert len(tables) == len(captions)
+        for table_el, caption in zip(tables, captions):
+            before, after = table_el.getprevious(), table_el.getnext()
+            assert before is not None and before.tag == W + "p"
+            assert "".join(before.itertext()) == caption
+            assert after is not None and after.tag == W + "p"
+            assert list(after.iter(W + "t")) == []
+
 
 # ---------------------------------------------------------------------------
 # U-DX-09 字体回退
@@ -639,6 +686,43 @@ class TestNumbering:
         assert st.next_prefix(1) == "二、"
         assert st.next_prefix(2) == "（一）", "h2 应归零重数"
         assert st.next_prefix(3) == "1.", "h3 应归零重数"
+
+    def test_decimal_state_machine_resets_deeper(self):
+        # 裁决 U-MN-10/P15：§03 要求数字层级；显式模式，不改旧中文编号契约。
+        levels = [1, 2, 3, 3, 2, 3, 1, 2, 3]
+        state = NumberingState()
+        assert [state.next_prefix(level, decimal=True) for level in levels] == [
+            "1 ", "1.1 ", "1.1.1 ", "1.1.2 ", "1.2 ", "1.2.1 ",
+            "2 ", "2.1 ", "2.1.1 ",
+        ]
+
+    @pytest.mark.parametrize("pre_numbered", [False, True])
+    def test_decimal_headings_are_complete_in_saved_document(self, pre_numbered):
+        """U-MN-10/P15/P20：三级全量序列、文字、数量、父节切换后归零。"""
+        cases = [
+            (1, "1", "总体"), (2, "1.1", "预算"),
+            (3, "1.1.1", "编制"), (3, "1.1.2", "审核"),
+            (2, "1.2", "执行"), (3, "1.2.1", "落实"),
+            (3, "1.2.2", "检查"), (1, "2", "安排"),
+            (2, "2.1", "责任"), (3, "2.1.1", "分工"),
+        ]
+        # 错乱的既有数字序号必须被整体替换，不能残留 9.8.7 或重复前缀。
+        lines = ["# 会议纪要", "正文。"]
+        for level, _, title in cases:
+            old = ["9 ", "9.8 ", "9.8.7 "][level - 1] if pre_numbered else ""
+            lines.append("#" * (level + 1) + " " + old + title)
+        result = render_markdown_to_docx(
+            "\n\n".join(lines),
+            options=RenderOptions(installed_fonts=FONTS_OK, decimal_numbering=True),
+        )
+        data = io.BytesIO()
+        result.doc.save(data)
+        texts = ["".join(p.itertext()) for p in body_paragraphs(doc_xml(data.getvalue()))]
+        headings = [t for t in texts if t not in ("", "会议纪要", "正文。")]
+        assert result.heading_count == len(cases) == 10
+        assert headings == [f"{prefix} {title}" for _, prefix, title in cases]
+        assert [sum(t.split()[0].count(".") == level - 1 for t in headings)
+                for level in (1, 2, 3)] == [2, 3, 5]
 
     def test_no_duplicate_numbers_in_document(self):
         """整篇文档里同级编号不重复。"""
