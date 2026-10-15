@@ -170,13 +170,16 @@ def _plan_to_dicts(item: Any) -> list[dict]:
     所以**入口就转成 dict**。
     """
     out: list[dict] = []
-    for c in getattr(item, "chunk_plan", ()) or ():
+    files = list(getattr(item, "chunk_files", ()) or ())
+    for index, c in enumerate(getattr(item, "chunk_plan", ()) or ()):
         out.append({
             "seq": getattr(c, "seq", None),
             "start_ms": getattr(c, "start_ms", None),
             "end_ms": getattr(c, "end_ms", None),
             "source": str(getattr(item, "source_path", "")),
-            "chunk_files": [str(p) for p in (getattr(item, "chunk_files", ()) or ())],
+            # Each plan entry owns its chunk; repeating the full list here
+            # makes N chunks transcribe N times each.
+            "chunk_files": [str(files[index])] if index < len(files) else [],
         })
     return out
 
