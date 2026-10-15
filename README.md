@@ -4,7 +4,7 @@
 
 全流程在本机完成——转写与摘要均为本地推理，程序自身零外部网络请求。
 
-**一期状态**：W1—W8 收口，SAD 端点清单 30/30 全清，T1-17 Windows 回归 2293 收集 / 2276 passed / 17 skipped / 0 failed；T1-18 打包已完成，下一张卡为 T2-01 收口。
+**项目状态**：一期 W1—W8 与 T1-18 打包已完成；**T2-01 收口完成，下一张卡 T2-02**。macOS 最近一次全量回归（A3 检查循环）：2366 passed / 16 skipped / 1 deselected / 0 failed / 1 warning；本轮定向测试 351 passed / 1 warning，T2-01 自动验收 10/10（fake 管道 100%，真模型 UNSUPPORTED；[证据与遗留](docs/T2-01-施工卡.md)）。
 
 ---
 
