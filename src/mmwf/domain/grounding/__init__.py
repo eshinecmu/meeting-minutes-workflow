@@ -1,4 +1,4 @@
-"""grounding 领域模块（待实现）。
+"""离线溯源绑定。"""
+from .binder import GroundingResult, bind_grounding, bind_grounding_exact, normalize_punct
 
-所属施工卡见 docs/02-开发施工文档。
-"""
+__all__ = ["GroundingResult", "bind_grounding", "bind_grounding_exact", "normalize_punct"]
