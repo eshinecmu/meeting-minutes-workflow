@@ -54,6 +54,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from mmwf.infra.paths import export_paths, relative_posix
 from mmwf.infra import db as dbmod
 
 logger = logging.getLogger(__name__)
@@ -180,6 +181,8 @@ def node_input_from_state(node_id: str, state: dict) -> dict:
             "candidate": content_hash(state.get("minutes_structured") or state.get("minutes")),
         }
         return out
+    if node_id == "archive":
+        return {"export_paths": export_paths(state.get("export_paths") or {})}
     return {k: state.get(k) for k in keys}
 
 
@@ -399,13 +402,13 @@ def _default_result_ref(result: Any) -> str | None:
     for attr in ("result_ref", "rel_path", "filename", "path"):
         val = getattr(result, attr, None)
         if val:
-            return str(val)
+            return relative_posix(val) if attr == "rel_path" else str(val)
     if isinstance(result, (str, Path)):
         return str(result)
     if isinstance(result, dict):
         for k in ("rel_path", "path", "filename"):
             if result.get(k):
-                return str(result[k])
+                return relative_posix(result[k]) if k == "rel_path" else str(result[k])
     return str(result)
 
 

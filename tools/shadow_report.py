@@ -15,6 +15,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from mmwf.infra.paths import relative_posix
 from mmwf.domain.shadow import (  # noqa: E402
     EvaluationBatch, RECORD_FIELDS, aggregate_metrics, index_issues, parse_records,
     parse_thresholds, parse_scores, project_records, render_report, thaw,
@@ -178,7 +179,7 @@ def main(argv=None):
         batch = EvaluationBatch(batch.batch_id, batch.dataset_kind, batch.meetings,
             freeze({**batch.metadata, "thresholds_path": str(thresholds_path),
                     "thresholds_file_fingerprint": hashlib.sha256(thresholds_path.read_bytes()).hexdigest(),
-                    "report_code_file_fingerprints": {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+                    "report_code_file_fingerprints": {relative_posix(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                         for p in [Path(__file__), *sorted((ROOT / "src/mmwf/domain/shadow").glob("*.py"))]}}))
         summary = aggregate_metrics(batch, scores, thresholds)
         # 已有的固定名称投影只能与权威评分一致，不能凭改表改判。

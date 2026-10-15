@@ -327,7 +327,7 @@ class TestToken:
             ("GET", f"{API}/templates/{{template_id}}/versions"),
             ("GET", f"{API}/templates/{{template_id}}/versions/{{version_no}}"),
             ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
-            ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file}}"),
+            ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file:path}}"),
             ("GET", f"{API}/meetings/{{meeting_id}}/export/undo"),
         }
 

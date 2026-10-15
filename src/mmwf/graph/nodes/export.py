@@ -29,6 +29,7 @@ import errno
 import json
 from typing import Any, Callable
 
+from mmwf.infra.paths import export_paths
 from mmwf.domain.errors import MmwfError
 from mmwf.infra.filestore import FileStoreError
 from mmwf.graph import idempotency as idem
@@ -80,6 +81,7 @@ def make_export(
         if cached:
             try:
                 got = json.loads(got)
+                got["paths"] = export_paths(got["paths"])
                 expected = f"export/{B.meeting_id_of(state)}-纪要-v{snapshot['version_no']}.docx"
                 valid = got["paths"]["docx"] == expected and session.store.exists(expected)
             except (ValueError, TypeError, KeyError):
@@ -91,7 +93,7 @@ def make_export(
                     result_ref_of=lambda value: json.dumps(value, ensure_ascii=False))
                 if cached:
                     got = json.loads(got)
-        paths = got["paths"]
+        paths = export_paths(got["paths"])
 
         if not cached:
             # 只有真正执行时才写审计 —— 幂等命中说明"上一次已经留过痕了"。
@@ -155,7 +157,7 @@ def make_archive(
         from mmwf.app.services.export import make_export_service, delivery_lock
         service = make_export_service(B.meeting_id_of(state), cfg.settings)
         with delivery_lock(session.store):
-            paths = dict(state.get("export_paths") or {})
+            paths = export_paths(state.get("export_paths") or {})
             pdfs = service.valid_pdf_entries(paths.get('docx', ''))
             paths.pop('pdf', None)
             if pdfs:
@@ -238,7 +240,7 @@ def _paths_of(result: Any) -> dict[str, Any]:
             "rel_path": getattr(conv, "rel_path", None),
             "detail": getattr(conv, "detail", None),
         }
-    return {k: v for k, v in out.items() if v not in (None, "")}
+    return export_paths({k: v for k, v in out.items() if v not in (None, "")})
 
 
 def _key_of(state: dict, node_id: str = S.NODE_EXPORT) -> str:

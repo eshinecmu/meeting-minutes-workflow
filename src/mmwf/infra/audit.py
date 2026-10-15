@@ -68,6 +68,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from mmwf.infra.paths import relative_posix
 from mmwf.infra.db import connect_ctx
 
 logger = logging.getLogger(__name__)
@@ -795,7 +796,7 @@ class AuditLogger:
         if version is not None:
             detail["version"] = version
         if rel_path:
-            detail["path"] = rel_path
+            detail["path"] = relative_posix(rel_path)
         if segment_count is not None:
             detail["segments"] = segment_count
         if review_count is not None:
@@ -827,11 +828,13 @@ class AuditLogger:
         """导出/撤销导出留痕。`files` 只放**相对路径**，不放文件内容。"""
         d: dict[str, Any] = {"meeting_id": meeting_id}
         if files:
-            d["files"] = list(files)
+            d["files"] = [relative_posix(p) for p in files]
         if classification:
             d["classification"] = classification
         if detail:
             d.update(detail)
+        if isinstance(d.get("path"), str):
+            d["path"] = relative_posix(d["path"])
         return self.log(
             operator=operator,
             action="export_undo" if undo else "export",

@@ -10,6 +10,7 @@ from urllib.parse import quote
 
 from mmwf.domain.review.gate_edit import canonical_json
 from mmwf.graph.idempotency import make_idempotency_key
+from mmwf.infra.paths import relative_posix
 from mmwf.infra.audit import AuditLogger
 from mmwf.infra.db import connect_ctx, transaction
 from mmwf.infra.crypto import FileCipher
@@ -55,7 +56,7 @@ class GateStore:
 
     def snapshot(self, meeting_id, checkpoint_id, content):
         # 编码整个 ID，避免检查点带路径分隔符；前缀也避免 '.' / '..'。
-        ref = f"gate/ckpt-{quote(checkpoint_id, safe='')}/snapshot.json"
+        ref = relative_posix(f"gate/ckpt-{quote(checkpoint_id, safe='')}/snapshot.json")
         dst = self.data_root / meeting_id / ref
         dst.parent.mkdir(parents=True, exist_ok=True)
         temp = None

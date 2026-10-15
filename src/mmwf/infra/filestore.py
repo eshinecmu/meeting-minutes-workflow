@@ -51,6 +51,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
+from mmwf.infra.paths import relative_posix
 from mmwf.infra.crypto import FileCipher, sha256_bytes, sha256_file
 from mmwf.infra.keystore import load_or_create_key
 
@@ -84,6 +85,9 @@ class ManifestEntry:
     encrypted: bool = False
     size_bytes: int = 0
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", relative_posix(self.path))
+
 
 @dataclass(frozen=True)
 class StoredFile:
@@ -95,6 +99,9 @@ class StoredFile:
     plain_sha256: str      # 明文哈希
     encrypted: bool
     size_bytes: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "rel_path", relative_posix(self.rel_path))
 
 
 class FileStore:
@@ -167,9 +174,9 @@ class FileStore:
         s = str(rel_path)
         if not s or s[0] in ("/", "\\"):
             raise FileStoreError(f"rel_path 必须是相对路径：{rel_path!r}")
-        p = Path(s)
         if PurePosixPath(s).anchor or PureWindowsPath(s).anchor:
             raise FileStoreError(f"rel_path 必须是相对路径：{rel_path!r}")
+        p = Path(relative_posix(s))
         if ".." in p.parts:
             raise FileStoreError(f"rel_path 不允许包含 '..'：{rel_path!r}")
 
@@ -187,6 +194,7 @@ class FileStore:
         """按所在类别决定是否加密；export/ 与 manifest 恒为明文。"""
         if not self.encrypt_enabled:
             return False
+        rel_path = relative_posix(rel_path)
         first = Path(rel_path).parts[0] if Path(rel_path).parts else ""
         return first not in PLAINTEXT_AREAS
 
@@ -197,6 +205,7 @@ class FileStore:
     def write(self, rel_path: str, data: bytes, *, stage: Stage | str | None = None) -> StoredFile:
         """写入产物。按目录类别自动决定是否加密，并登记 manifest。"""
         dst = self.resolve(rel_path)
+        rel_path = relative_posix(rel_path)
         dst.parent.mkdir(parents=True, exist_ok=True)
         encrypted = self._is_encrypted_path(rel_path)
 
@@ -300,6 +309,7 @@ class FileStore:
         为什么不做"解密到内存再喂给 ffmpeg"：ffmpeg 只吃文件路径，
         没有 stdin 接口可用（除非走 pipe 协议，复杂且易错）。
         """
+        rel_path = relative_posix(rel_path)
         if self._is_encrypted_path(rel_path):
             data = self.read(rel_path)
             suffix = Path(rel_path).suffix
@@ -356,7 +366,7 @@ class FileStore:
         self._flush_manifest(entries)
 
     def _remove_manifest(self, rel_path: str) -> None:
-        entries = [e for e in self.manifest() if e.path != rel_path]
+        entries = [e for e in self.manifest() if e.path != relative_posix(rel_path)]
         self._flush_manifest(entries)
 
     def _flush_manifest(self, entries: list[ManifestEntry]) -> None:
@@ -406,7 +416,7 @@ class FileStore:
             enc = is_encrypted(path)
             entries.append(
                 ManifestEntry(
-                    path=rel.as_posix(),
+                    path=relative_posix(rel),
                     sha256=disk_digest,
                     created_at=_mtime_iso(path),
                     stage=rel.parts[0] if len(rel.parts) > 1 else "root",
@@ -449,8 +459,8 @@ class FileStore:
                 continue
             if rel.parts and rel.parts[0] == ".tmp":
                 continue
-            if rel.as_posix() not in recorded:
-                problems.append(f"存在未登记的文件：{rel.as_posix()}")
+            if relative_posix(rel) not in recorded:
+                problems.append(f"存在未登记的文件：{relative_posix(rel)}")
 
         return problems
 

@@ -1,6 +1,7 @@
 """G3 候选稿的副本适配、重建与复检；不推进检查点。"""
 from copy import deepcopy
 
+from mmwf.infra.paths import relative_posix
 from mmwf.domain.errors import GroundingBlockedError, MmwfError
 from mmwf.domain.minutes.state_compat import authoritative_segments, upgrade_legacy_state
 from mmwf.domain.minutes.post_validation import post_validate
@@ -133,7 +134,8 @@ class MinutesService:
 
     def require_final(self, meeting_id, filename):
         import re
-        from pathlib import Path
+        from pathlib import PurePosixPath as Path
+        filename = relative_posix(filename)
         matched = re.fullmatch(re.escape(meeting_id) + r'-纪要-v(\d+)\.(?:docx|doc|pdf)', Path(filename).name)
         row = self.store().get(meeting_id, int(matched[1])) if matched else None
         if not row or not row['is_final']:

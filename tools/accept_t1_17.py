@@ -80,7 +80,7 @@ SAD_9_1 = {
     ("GET", f"{API}/meetings/{{meeting_id}}/issues"),
     ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
     ("POST", f"{API}/meetings/{{meeting_id}}/export"),
-    ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file}}"),
+    ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file:path}}"),
     ("POST", f"{API}/meetings/{{meeting_id}}/export/undo"),
     ("GET", f"{API}/glossary"),
     ("POST", f"{API}/glossary"),

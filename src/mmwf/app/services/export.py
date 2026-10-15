@@ -65,7 +65,7 @@ import threading
 import shutil
 import subprocess
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from mmwf.domain.docx import (
@@ -79,6 +79,7 @@ from mmwf.domain.docx import (
 )
 from mmwf.domain.docx.writer import FontMissingError
 from mmwf.domain.errors import MmwfError
+from mmwf.infra.paths import relative_posix, export_paths, pdf_bindings
 from mmwf.infra.crypto import CryptoError
 from mmwf.infra.audit import AuditLogger
 from mmwf.infra.filestore import FileStore, FileStoreError, StoredFile
@@ -169,6 +170,10 @@ class DocConversion:
     rel_path: str | None = None
     reason: str = ""
 
+    def __post_init__(self) -> None:
+        if self.rel_path is not None:
+            self.rel_path = relative_posix(self.rel_path)
+
     @property
     def ok(self) -> bool:
         return self.status == DOC_STATUS_OK
@@ -198,6 +203,11 @@ class ExportResult:
     format: str = "docx"
     source_docx: dict | None = None
     pdf_conversion: DocConversion | None = None
+
+    def __post_init__(self) -> None:
+        self.rel_path = relative_posix(self.rel_path)
+        if self.source_docx is not None:
+            self.source_docx = {**self.source_docx, "path": relative_posix(self.source_docx["path"])}
 
     @property
     def filename(self) -> str:
@@ -495,7 +505,7 @@ class ExportService:
             payload = produced.read_bytes()
             if target == "pdf" and not payload.startswith(b"%PDF-"):
                 return DocConversion(status="failed", reason="转换输出为空或不是 PDF")
-            rel = str(Path(docx_rel_path).with_suffix("." + target))
+            rel = relative_posix(PurePosixPath(relative_posix(docx_rel_path)).with_suffix("." + target))
             self._write_export(rel, payload)
             return DocConversion(status="ok", rel_path=rel)
         except (subprocess.TimeoutExpired, OSError) as exc:
@@ -534,8 +544,9 @@ class ExportService:
                 source = self.export_docx(snapshot['version_no'], artifact="minutes",
                     minutes_state=minutes_state, minutes_snapshot=snapshot, approved=approved,
                     installed_fonts=installed_fonts, convert_doc=False, write_audit=False)
+                source.rel_path = relative_posix(source.rel_path)
                 version = source.version
-                rel = str(Path(source.rel_path).with_suffix('.pdf'))
+                rel = relative_posix(PurePosixPath(relative_posix(source.rel_path)).with_suffix('.pdf'))
                 binding = dict(version=version, pair_fingerprint=snapshot['note']['pair_fingerprint'],
                     source_docx_path=source.rel_path, source_docx_sha256=source.sha256)
                 from mmwf.graph.idempotency import IdempotencyStore, make_idempotency_key
@@ -592,6 +603,8 @@ class ExportService:
 
     def _write_json(self, rel: str, value: dict) -> None:
         """内部登记也沿统一写入错误语义，满盘交上层处理。"""
+        if rel == ARCHIVE_MANIFEST and isinstance(value.get("export_paths"), dict):
+            value = {**value, "export_paths": export_paths(value["export_paths"])}
         try:
             self.store.write_json(rel, value, stage="archive")
         except PermissionError as exc:
@@ -614,14 +627,14 @@ class ExportService:
             data = json.loads(payload)
             if (isinstance(data, dict) and data['format_version'] == 1 and data['meeting_id'] == self.store.meeting_id
                     and isinstance(data['entries'], dict)):
-                return data['entries']
+                return pdf_bindings(data['entries'])
         except (ValueError, KeyError, TypeError, OSError, MmwfError, FileStoreError, CryptoError):
             pass
         return {}  # 损坏登记不作为缓存证据；重试须重新转换并登记。
 
     def _write_pdf_entries(self, entries: dict) -> None:
         self._write_json(PDF_REGISTRY, {'format_version': 1,
-            'meeting_id': self.store.meeting_id, 'entries': entries})
+            'meeting_id': self.store.meeting_id, 'entries': pdf_bindings(entries)})
 
     def _archive_for_pdf(self, archived: bool) -> dict:
         if not archived:
@@ -634,6 +647,7 @@ class ExportService:
             if (data['meeting_id'] == self.store.meeting_id and data.get('archived_at')
                     and isinstance(paths, dict) and isinstance(paths.get('pdf', {}), dict)
                     and hashlib.sha256(payload).hexdigest() == self._existing_plain_sha(ARCHIVE_MANIFEST)):
+                data['export_paths'] = export_paths(paths)
                 return data
         except (OSError, ValueError, KeyError, TypeError, MmwfError, FileStoreError, CryptoError):
             pass
@@ -642,6 +656,7 @@ class ExportService:
 
     def artifact_hashes(self, paths: dict) -> dict:
         """归档集合使用实际路径/明文哈希，PDF 绑定另在 pdf 映射中参与键。"""
+        paths = export_paths(paths)
         hashes = {}
         for rel in [paths.get('docx'), (paths.get('doc') or {}).get('rel_path'), *(paths.get('pdf') or {})]:
             if rel:
@@ -651,6 +666,7 @@ class ExportService:
         return dict(sorted(hashes.items()))
 
     def _valid_file(self, rel: str, sha: str, *, pdf: bool = False, size: int | None = None) -> bool:
+        rel = relative_posix(rel)
         try:
             data = self.store.read(rel)
             entry = next((e for e in self.store.manifest() if e.path == rel), None)
@@ -673,6 +689,7 @@ class ExportService:
             return False
 
     def require_pdf_source(self, rel: str, final: dict) -> dict:
+        rel = relative_posix(rel)
         entry = self.pdf_entries().get(rel)
         if not entry or not isinstance(entry, dict) or entry.get('version') != final['version_no'] or entry.get('pair_fingerprint') != final['note']['pair_fingerprint']:
             raise MmwfError(code="E4001", detail="PDF 没有匹配的审定来源登记")
@@ -682,6 +699,7 @@ class ExportService:
 
     def valid_pdf_entries(self, docx: str) -> dict:
         """归档前核对 final、来源及实际字节，清理失效来源登记。"""
+        docx = relative_posix(docx)
         entries = self.pdf_entries()
         valid = {}
         retained = {}
@@ -767,6 +785,7 @@ class ExportService:
             raise MmwfError(code="E5003", detail="导出文件写入失败") from exc
 
     def _existing_plain_sha(self, rel_path: str) -> str | None:
+        rel_path = relative_posix(rel_path)
         for entry in self.store.manifest():
             if entry.path == rel_path:
                 return entry.plain_sha256
@@ -774,6 +793,7 @@ class ExportService:
 
     def _stored_of(self, rel_path: str) -> StoredFile:
         """幂等命中时，从磁盘与 manifest 重建 StoredFile。"""
+        rel_path = relative_posix(rel_path)
         abs_path = self.store.resolve(rel_path)
         data = abs_path.read_bytes()
         plain = hashlib.sha256(data).hexdigest()
@@ -790,6 +810,7 @@ class ExportService:
     def _audit_export(self, version: int, rel_path: str | None,
                       result: str, *, extra: Mapping[str, Any] | None = None) -> None:
         """导出留痕。**只记路径与统计，绝不记正文**（部署手册 §5.3）。"""
+        rel_path = relative_posix(rel_path) if rel_path else None
         detail: dict[str, Any] = {"version": version}
         if rel_path:
             detail["path"] = rel_path

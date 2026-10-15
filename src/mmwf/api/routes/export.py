@@ -16,12 +16,12 @@ undo 的文件，而真因只是"这个地址只能 POST"。
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Path as PathParam
-from fastapi.responses import Response
+from fastapi import APIRouter, Body, Path as PathParam, Request
+from fastapi.responses import JSONResponse, Response
 
 from mmwf.api import envelope as env
 from mmwf.domain.errors import FileMissingError, MmwfError
@@ -242,11 +242,20 @@ def register(router: APIRouter, rt: Runtime) -> None:
             )
         return env.ok(data, msg)
 
-    @router.get("/meetings/{meeting_id}/export/{file}")
-    def download_export(meeting_id: str = PathParam(...), file: str = PathParam(...)):
+    @router.get("/meetings/{meeting_id}/export/{file:path}")
+    def download_export(meeting_id: str = PathParam(...), file: str = PathParam(...),
+                        request: Request = None):
         # 校验和读取覆盖同一会议锁，避免撤销/重导出插入二者之间。
-        with rt.meeting_lock(meeting_id):
-            return _download_export(meeting_id, file)
+        try:
+            with rt.meeting_lock(meeting_id):
+                return _download_export(meeting_id, file)
+        except MmwfError as exc:
+            # 下载路径语法错误在 HTTP 层明确拒绝；仍保留既有错误信封与编号。
+            # 直接调用端点的判据测试继续接收原异常。
+            if exc.code != "E1001" or request is None:
+                raise
+            return JSONResponse(env.from_error(exc, trace_id=getattr(request.state, "trace_id", None)),
+                                status_code=400)
 
     def _download_export(meeting_id: str, file: str):
         """下载导出文件（F5.1）。
@@ -259,20 +268,18 @@ def register(router: APIRouter, rt: Runtime) -> None:
             `....//x`                          不含连续两点
             `..\\\\x`                            Windows 反斜杠
 
-        所以用**白名单**：`Path(file).name == file`。
-        任何带目录成分的输入**一律拒**（E1001），不给"部分放行"的空间。
-
-        ⚠️ **区名写死为 `export`**：`filestore.PLAINTEXT_AREAS = {"export"}`，
-        别的区是**加密区**，`read()` 会透明解密 —— 若允许 `file` 带区名
-        （如 `record/v1.md`），就等于开了一个"读任意加密内容"的口子。
-        `file` 只当**文件名**用。
+        接受文件名或 API 返回的 `export/文件名` POSIX 相对引用。
+        区名固定为 export，剥去这个前缀后仍必须是单个文件名；
+        禁止嵌套目录、盘符、UNC、编码分隔符和目录穿越。
         """
         _require_meeting(meeting_id, rt.db_path)
 
         raw = str(file or "")
+        if raw.startswith("export/"):
+            raw = raw[len("export/"):]
         # ★ 白名单：文件名必须等于原样输入。这就同时挡掉了
         #   绝对路径、相对路径、URL 解码后的 `..`、反斜杠、盘符。
-        if not raw or raw in {".", ".."} or Path(raw).name != raw:
+        if not raw or raw in {".", ".."} or Path(raw).name != raw or PureWindowsPath(raw).anchor:
             raise MmwfError(
                 code="E1001",
                 detail=f"非法的文件名：{raw!r}（含目录成分或为空）",

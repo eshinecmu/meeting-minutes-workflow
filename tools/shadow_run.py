@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from mmwf.infra.paths import relative_posix
 from mmwf.domain.shadow import (  # noqa: E402
     RECORD_FIELDS, SYNTHETIC, WARNING, parse_manifest, record_template, score_template, thaw,
 )
@@ -301,7 +302,7 @@ def run_batch(manifest_path, output):
     code_files = [Path(__file__), *sorted((ROOT / "src/mmwf/domain").rglob("*.py")),
                   ROOT / "src/mmwf/graph/build.py", ROOT / "src/mmwf/graph/nodes/extraction.py",
                   *sorted((ROOT / "src/mmwf/adapters/llm").glob("*.py")), ROOT / "src/mmwf/settings.py"]
-    code_fingerprints = {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files}
+    code_fingerprints = {relative_posix(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in code_files}
     from mmwf.domain.extraction import prompts
     prompt_fp = fingerprint({k: getattr(prompts, k) for k in ("SYSTEM_PROMPT", "EXTRACTION_TEMPLATE", "RETRY_PREFIX")})
     run = {**common, "start_point": "已核对记录稿及权威转写分段（不含阶段0音频/ASR/人工核对实测）",

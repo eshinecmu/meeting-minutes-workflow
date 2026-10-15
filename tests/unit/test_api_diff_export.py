@@ -453,7 +453,7 @@ class TestTraversalGuard:
         # 找到下载端点的处理函数
         func = None
         for route in router.routes:
-            if getattr(route, "path", None) == "/meetings/{meeting_id}/export/{file}":
+            if getattr(route, "path", None) == "/meetings/{meeting_id}/export/{file:path}":
                 func = route.endpoint
                 break
         assert func is not None, "没找到下载端点"
@@ -471,7 +471,7 @@ class TestTraversalGuard:
         router = build_router(settings)
         func = None
         for route in router.routes:
-            if getattr(route, "path", None) == "/meetings/{meeting_id}/export/{file}":
+            if getattr(route, "path", None) == "/meetings/{meeting_id}/export/{file:path}":
                 func = route.endpoint
                 break
         try:

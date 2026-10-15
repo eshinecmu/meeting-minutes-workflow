@@ -7,7 +7,7 @@ SAD §9.1 里最后 5 个端点，**补齐后 §9.1 全部收口**：
   ② POST   /templates                     新建模板
   ③ PUT    /templates/{template_id}       改模板（内置不可改；版本自增）
   ④ GET    /meetings/{id}/diff            两版记录稿段落级差异
-  ⑤ GET    /meetings/{id}/export/{file}   下载导出文件（★ 安全红线）
+  ⑤ GET    /meetings/{id}/export/{file:path}   下载导出文件（★ 安全红线）
 
 九条标准（施工卡 §3.1 原文）
 ---------------------------
@@ -287,7 +287,7 @@ SAD_9_1 = {
     ("GET", f"{API}/meetings/{{meeting_id}}/minutes"),
     ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
     ("POST", f"{API}/meetings/{{meeting_id}}/export"),
-    ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file}}"),
+    ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file:path}}"),
     ("POST", f"{API}/meetings/{{meeting_id}}/export/undo"),
     ("GET", f"{API}/glossary"),
     ("POST", f"{API}/glossary"),
@@ -363,7 +363,7 @@ def check_standard_1(tmp: Path) -> bool:
         ("POST", f"{API}/templates"),
         ("PUT", f"{API}/templates/{{template_id}}"),
         ("GET", f"{API}/meetings/{{meeting_id}}/diff"),
-        ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file}}"),
+        ("GET", f"{API}/meetings/{{meeting_id}}/export/{{file:path}}"),
     }
 
     ok = True
@@ -870,7 +870,7 @@ def check_standard_7(tmp: Path) -> bool:
 
         endpoint = None
         for r in build_router(s.cfg).routes:
-            if getattr(r, "path", None) == "/meetings/{meeting_id}/export/{file}":
+            if getattr(r, "path", None) == "/meetings/{meeting_id}/export/{file:path}":
                 endpoint = r.endpoint
                 break
         ok &= _assert(endpoint is not None, "找到下载端点的函数本体")
@@ -912,8 +912,8 @@ def check_standard_7(tmp: Path) -> bool:
 
 
 def check_standard_8(tmp: Path) -> bool:
-    """先 `POST /export`，再 `GET /export/{file}` → 响应体是 ZIP 魔数。"""
-    banner("标准 8：GET /export/{file} 真的下到 docx（ZIP 魔数）")
+    """先 `POST /export`，再 `GET /export/{file:path}` → 响应体是 ZIP 魔数。"""
+    banner("标准 8：GET /export/{file:path} 真的下到 docx（ZIP 魔数）")
     with Session(tmp) as s:
         s.make_meeting()
         s.write_records({1: "# 会议记录\n\n会议认为，方案可行。\n\n会议要求，抓好落实。"})
