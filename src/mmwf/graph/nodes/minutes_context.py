@@ -80,8 +80,12 @@ def production_node(name, fn, context_factory, *, deps):
                                  record_markdown=state.get("record_markdown"))
             if any(i["blocking"] for i in hard):
                 raise GroundingBlockedError(issues=hard)
-            return {"minutes_markdown": render_template_markdown(
-                apply_template(structured, template), adapted["issues"]), "_gate_route": None}
+            work = apply_template(structured, template)
+            result = {"minutes_markdown": render_template_markdown(work, adapted["issues"]), "_gate_route": None}
+            from mmwf.app.services.minutes import MinutesService
+            MinutesService(cfg.settings).save_draft(B.meeting_id_of(state),
+                {**adapted, "minutes_structured": work, **result})
+            return result
         return fn(state)
     run.__name__ = name
     return run

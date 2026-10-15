@@ -45,7 +45,6 @@ def register(router: APIRouter, rt: Runtime) -> None:
         重复调用返回同一路径 + `reused=True`，前端不用去重。
         """
         _require_meeting(meeting_id, rt.db_path)
-        svc = rt.export_service(meeting_id)
         # ⚠️ **不要**在这里 try/except 转信封（T1-11 Review 改）。
         # 第一版写的是：
         #     except Exception as exc:
@@ -59,10 +58,8 @@ def register(router: APIRouter, rt: Runtime) -> None:
         #      实际非 MmwfError 只是 re-raise —— 白写一层。
         # 全局处理器（`@app.exception_handler(MmwfError)`）已经覆盖
         # 所有业务异常并附带 trace_id，端点里**只管业务**就好。
-        result = svc.export_docx(
-            version=payload.get("version"),
-            convert_doc=payload.get("convert_doc"),
-        )
+        from mmwf.app.services.minutes import http_export
+        result = http_export(rt, meeting_id, payload)
         data = result.to_dict()
         message = "文件已生成" if not result.reused else "文件已存在，未重复生成"
         return env.ok(data, message)
@@ -313,6 +310,8 @@ def register(router: APIRouter, rt: Runtime) -> None:
                 context={"area": "export", "meeting_id": meeting_id},
             )
 
+        from mmwf.app.services.minutes import check_download
+        check_download(rt, meeting_id, raw)
         fs = rt.filestore(meeting_id)
         # ★ 区名**写死** `export`，`raw` 只当文件名 —— 见 docstring。
         rel = f"export/{raw}"

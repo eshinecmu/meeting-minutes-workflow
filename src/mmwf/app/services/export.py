@@ -89,7 +89,7 @@ EXPORT_AREA = "export"
 RECORD_AREA = "record"
 
 #: 导出文件名模板。与记录稿版本号一一对应。
-EXPORT_NAME_TEMPLATE = "{meeting_id}-v{version}.docx"
+EXPORT_NAME_TEMPLATE = "{meeting_id}-{artifact_label}-v{version}.docx"
 
 #: `.doc` 转换的产物后缀。
 DOC_SUFFIX = ".doc"
@@ -327,21 +327,38 @@ class ExportService:
         installed_fonts: set[str] | None = None,
         convert_doc: bool | None = None,
         write_audit: bool = True,
+        artifact: str = "record",
+        minutes_state: dict | None = None,
+        minutes_snapshot: dict | None = None,
+        approved: bool = False,
     ) -> ExportResult:
         """导出 docx。
 
         Args:
-            version: 记录稿版本；`None` 取最新。
+            version: 所选 artifact 的版本；`None` 取当前 / 最新。
+            minutes_snapshot: 图显式传入的配对版本；服务独立复检后比对。
             installed_fonts: 显式指定已装字体（测试用）；`None` 走真实探测。
             convert_doc: 是否同时转 `.doc`；`None` 取实例配置。
             write_audit: 是否留痕（测试单测渲染时可在外面关掉）。
         """
-        if version is None:
-            version = self.latest_record_version()
-
-        markdown = self.read_record(version)
+        if not isinstance(artifact, str) or artifact not in {"record", "minutes"}:
+            raise MmwfError(code="E4001", detail="artifact 必须为 record 或 minutes")
+        snapshot = None
+        if artifact == "minutes":
+            if not hasattr(self, "minutes_service") or minutes_state is None:
+                raise MmwfError(code="E4001", detail="纪要交付缺少校验上下文")
+            snapshot = self.minutes_service.deliver(self.store.meeting_id, minutes_state,
+                approved=approved, version=version, created_by=self.operator)
+            if minutes_snapshot is not None and minutes_snapshot != snapshot:
+                raise MmwfError(code="E4001", detail="待导出的纪要配对快照已变化")
+            version = snapshot["version_no"]
+            markdown = snapshot["markdown"]
+        else:
+            if version is None:
+                version = self.latest_record_version()
+            markdown = self.read_record(version)
         content_sha = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
-        idem = make_idempotency_key(self.store.meeting_id, version, content_sha)
+        idem = make_idempotency_key(self.store.meeting_id + ":" + artifact, version, content_sha)
 
         # 字体策略 fail 时，在渲染之前就拦下（渲染里也会拦，这里是双保险）
         report = self.font_report(installed=installed_fonts)
@@ -368,7 +385,8 @@ class ExportService:
             raise ExportBlockedError(str(exc)) from exc
 
         payload = _docx_bytes(rendered)
-        rel_path = f"{EXPORT_AREA}/{EXPORT_NAME_TEMPLATE.format(meeting_id=self.store.meeting_id, version=version)}"
+        label = "纪要" if artifact == "minutes" else "记录稿"
+        rel_path = f"{EXPORT_AREA}/{EXPORT_NAME_TEMPLATE.format(meeting_id=self.store.meeting_id, artifact_label=label, version=version)}"
 
         # --- 幂等：同名且明文哈希一致 -> 复用，不重复登记 ---
         reused = self._existing_plain_sha(rel_path) == hashlib.sha256(payload).hexdigest()
@@ -631,7 +649,7 @@ def make_export_service(
 
     export_cfg = settings.export
     soffice = getattr(export_cfg, "soffice_path", None)
-    return ExportService(
+    service = ExportService(
         store,
         db_path=data_dir / "mmwf.db",
         audit=audit,
@@ -640,6 +658,10 @@ def make_export_service(
         soffice_path=str(soffice) if soffice else None,
         enable_doc_export=bool(getattr(export_cfg, "enable_doc_export", False)),
     )
+    from .minutes import MinutesService
+    service.minutes_service = MinutesService(settings)
+    return service
+
 
 
 __all__ = [

@@ -52,6 +52,16 @@ export async function renderExport(view, meeting, shell) {
   const row = document.createElement('div');
   row.className = 'row';
 
+  const artifact = document.createElement('select');
+  artifact.setAttribute('aria-label', '导出内容');
+  for (const [value, label] of [['minutes', '会议纪要'], ['record', '记录稿']]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    artifact.appendChild(option);
+  }
+  row.appendChild(artifact);
+
   const exportBtn = document.createElement('button');
   exportBtn.className = 'btn btn-primary';
   exportBtn.textContent = '导出为文档';
@@ -77,7 +87,7 @@ export async function renderExport(view, meeting, shell) {
       const data = await api.call(
         'POST',
         `/meetings/${meeting.meeting_id}/export`,
-        {}
+        { artifact: artifact.value }
       );
       const path = data.path;
       result.appendChild(

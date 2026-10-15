@@ -186,7 +186,12 @@ class GateService:
             saved = record["resume"].get("_g3_candidate")
             if saved:
                 state = {**state, **saved}
-            record["resume"]["_g3_candidate"] = gate_candidate(self.runtime, record["meeting_id"], state)
+            candidate = gate_candidate(self.runtime, record["meeting_id"], state)
+            record["resume"]["_g3_candidate"] = candidate
+            if record["request"]["decision"] == "edit":
+                from .minutes import MinutesService
+                MinutesService(self.runtime.cfg).save_draft(record["meeting_id"],
+                    {**state, **candidate}, created_by=record["operator"], node_id="gate_g3")
         before = runner.run_counts()
         status = runner.resume(record["resume"])
         self.observe_pending(record["meeting_id"], runner)

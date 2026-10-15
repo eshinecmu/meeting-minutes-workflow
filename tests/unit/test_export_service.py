@@ -516,7 +516,7 @@ class TestVersionSelection:
     def test_filename_template(self, env):
         svc = _svc(env)
         r = svc.export_docx(installed_fonts=FONTS_OK)
-        assert r.filename == f"{MEETING_ID}-v1.docx"
+        assert r.filename == f"{MEETING_ID}-记录稿-v1.docx"
 
     def test_version_from_manifest_union(self, env):
         """文件被**外部**删掉、manifest 仍记得 v2 —— 不该退回 v1。

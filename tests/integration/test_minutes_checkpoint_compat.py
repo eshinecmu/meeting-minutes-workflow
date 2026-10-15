@@ -47,12 +47,14 @@ def write_old_checkpoint(runtime, stop="gate_g2", missing_source=False):
     graph.add_conditional_edges("validate", route_after_validate,
                                 {"ok": "assemble", "retry": "generate", "give_up": "assemble"})
     graph.add_edge("archive", END)
-    app = graph.compile(checkpointer=saver, interrupt_before=[stop] if stop == "assemble" else [])
+    app = graph.compile(checkpointer=saver, interrupt_before=[stop] if stop in {"assemble", "export"} else [])
     cfg = thread_config("d4")
     app.invoke({"meeting_id": "d4", "task_id": "d4"}, cfg)
-    if stop in {"assemble", "gate_g3"}:
+    if stop in {"assemble", "gate_g3", "export"}:
         from langgraph.types import Command
         app.invoke(Command(resume={"decision": "approve"}), cfg)
+        if stop == "export":
+            app.invoke(Command(resume={"decision": "approve"}), cfg)
     snapshot = app.get_state(cfg)
     assert "minutes" not in snapshot.values and "issues" not in snapshot.values
     saver.conn.close()
@@ -117,10 +119,9 @@ def test_frozen_next_assemble_adapts_and_rechecks(runtime, missing_source):
 
 @pytest.mark.parametrize("decision", ["approve", "edit", "reject"])
 @pytest.mark.parametrize("missing_source", [False, True])
-def test_frozen_g3_service_precheck(runtime, decision, missing_source, monkeypatch):
+def test_frozen_g3_service_precheck(runtime, decision, missing_source):
     from mmwf.app.services.gate import GateService
     from mmwf.domain.errors import MmwfError
-    from mmwf.graph import nodes as N
 
     # 冻结旧 schema 继续到旧 G3；重开新 runner 前关闭旧连接。
     # write_old_checkpoint 可直接写 G3，仍由旧图生成原稿。
@@ -132,8 +133,7 @@ def test_frozen_g3_service_precheck(runtime, decision, missing_source, monkeypat
         assert runner.status().pending_gate.gate == "G3"
         assert runner.status().pending_gate.checkpoint_id == checkpoint_id
         assert runner.values() == before
-    # 交付属于 D5b；此处只观察 G3 增量，不生成文件。
-    monkeypatch.setattr(N, "make_export", lambda d: lambda s: {"export_paths": {"docx": "test-only"}})
+    # D5b 已接通真实纪要交付；不能再用无 final 配对的占位路径通过归档。
     if decision != "reject" and (missing_source or decision == "approve"):
         with pytest.raises(MmwfError) as caught:
             service.apply_decision("d4", "G3", checkpoint_id, decision, payload, "秘书", "")

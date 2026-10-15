@@ -25,6 +25,7 @@ G3 approve 之后走到本节点才写审计。放在闸口里会因为 `interru
 from __future__ import annotations
 
 import logging
+import json
 from typing import Any, Callable
 
 from mmwf.domain.errors import MmwfError
@@ -59,17 +60,36 @@ def make_export(
         B.touch_task_state(cfg.db_path_of(state), B.meeting_id_of(state),
                            S.NODE_EXPORT)
         session = cfg.session(state)
+        from mmwf.app.services.minutes import MinutesService
+        snapshot = MinutesService(cfg.settings).deliver(B.meeting_id_of(state), state,
+            approved=True, created_by=str(state.get("operator") or "system"))
 
         def do() -> dict[str, Any]:
             svc = _service(service_factory, cfg, state, session)
             # write_audit=False：审计由本节点在**幂等之外**写一次，
             # 否则幂等命中时不会写（那时没走 svc），语义就断了。
-            result = svc.export_docx(write_audit=False)
-            return {"_result": result}
+            result = svc.export_docx(write_audit=False, artifact="minutes",
+                minutes_state=state, minutes_snapshot=snapshot, approved=True)
+            return {"paths": _paths_of(result), "warnings": list(getattr(result, "font_warnings", ()) or ())}
 
-        got, cached = B.idempotent(cfg.idem_store, S.NODE_EXPORT, state, do)
-        result = got.get("_result")
-        paths = _paths_of(result)
+        store = cfg.idem_store or idem.IdempotencyStore(cfg.db_path_of(state))
+        got, cached = B.idempotent(store, S.NODE_EXPORT, state, do,
+            result_ref_of=lambda value: json.dumps(value, ensure_ascii=False))
+        if cached:
+            try:
+                got = json.loads(got)
+                expected = f"export/{B.meeting_id_of(state)}-纪要-v{snapshot['version_no']}.docx"
+                valid = got["paths"]["docx"] == expected and session.store.exists(expected)
+            except (ValueError, TypeError, KeyError):
+                valid = False
+            if not valid:
+                # 旧记录稿缓存不是纪要交付；合法候选重新生成配对文件。
+                store.drop(_key_of(state))
+                got, cached = B.idempotent(store, S.NODE_EXPORT, state, do,
+                    result_ref_of=lambda value: json.dumps(value, ensure_ascii=False))
+                if cached:
+                    got = json.loads(got)
+        paths = got["paths"]
 
         if not cached:
             # 只有真正执行时才写审计 —— 幂等命中说明"上一次已经留过痕了"。
@@ -87,7 +107,7 @@ def make_export(
             # export 是 G3 的下游第一个节点，负责清路由标记
             "_gate_route": None,
         }
-        warns = list(getattr(result, "font_warnings", ()) or ())
+        warns = got["warnings"]
         if warns:
             errs = list(state.get("errors") or [])
             for w in warns:
@@ -112,6 +132,10 @@ def make_archive(
 
     def archive(state: dict) -> dict:
         B.require_inputs(S.NODE_ARCHIVE, state)
+        from mmwf.app.services.minutes import MinutesService
+        minutes_service = MinutesService(cfg.settings)
+        minutes_service.validate(B.meeting_id_of(state), state)
+        minutes_service.require_final(B.meeting_id_of(state), state.get("export_paths", {}).get("docx", ""))
         B.touch_task_state(cfg.db_path_of(state), B.meeting_id_of(state),
                            S.NODE_ARCHIVE)
         session = cfg.session(state)

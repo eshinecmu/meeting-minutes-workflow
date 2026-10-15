@@ -174,6 +174,10 @@ CREATE INDEX IF NOT EXISTS idx_pending_meeting ON pending_decision(meeting_id);
 --   那里有明确需求牵引（F7.2「模板版本管理：修改后 version 递增，历史版本可查」），
 --   届时"结构化快照 + Markdown 快照"才有真正的写入方（生成节点）与消费方（校验/比对）。
 --   ⚠️ 启用时**不要再新建表**，直接用这一张。
+--
+-- T2-04 D5b 启用补记（以上保留为一期弃用的历史说明）：
+-- assemble / G3 edit 保存加密配对草稿，G3 通过且出口复检后标 final。
+-- 沿用既有列，不重建一期历史；diff 仍比记录稿。
 CREATE TABLE IF NOT EXISTS minutes_version (
     version_id      TEXT PRIMARY KEY,
     meeting_id      TEXT NOT NULL,
