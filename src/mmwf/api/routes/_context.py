@@ -266,9 +266,18 @@ class Runtime:
         from mmwf.graph.build import Deps
         from mmwf.graph.runner import GraphRunner
 
+        deps = Deps(settings=self.cfg)
+        if self.cfg.extraction.engine == "llm":
+            from mmwf.adapters.llm import make_llm_client
+            from mmwf.graph.nodes.extraction import make_llm_extractor
+
+            # 仅装配，不探测服务；模型调用延迟到 extract 节点执行。
+            client = make_llm_client(self.cfg)
+            deps.extractor = make_llm_extractor(client, self.cfg)
+
         return GraphRunner(
             meeting_id,
-            deps=Deps(settings=self.cfg),
+            deps=deps,
             checkpoint_path=self.db_path,
             audit=AuditLogger(self.db_path),
         )

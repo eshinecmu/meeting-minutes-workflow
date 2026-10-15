@@ -1,4 +1,6 @@
 extraction:
+  # 抽取实现仅允许 naive（朴素实现，默认）或 llm（本地大模型）。
+  engine: naive
   chunk:
     target_chars: 1500
     min_chars: 1000

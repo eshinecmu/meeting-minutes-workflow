@@ -79,6 +79,11 @@ def build_from_settings(settings: Any) -> LlmClient:
     return build(llm.provider)
 
 
+def make_llm_client(settings: Any) -> LlmClient:
+    """按配置构造客户端；此时不做健康探测或建立连接。"""
+    return build_from_settings(settings)
+
+
 __all__ = [
     "FakeLlmClient",
     "LlmClient",
@@ -88,6 +93,7 @@ __all__ = [
     "available_providers",
     "build",
     "build_from_settings",
+    "make_llm_client",
     "register",
     "unregister",
 ]

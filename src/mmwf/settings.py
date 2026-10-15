@@ -184,6 +184,7 @@ class ExtractionConfig(BaseModel):
 
         model_config = {"frozen": True}
 
+    engine: Literal["naive", "llm"] = "naive"
     chunk: ChunkConfig = ChunkConfig()
     merge: MergeConfig = MergeConfig()
     retry: RetryConfig = RetryConfig()

@@ -39,6 +39,7 @@ def test_loads_all_six_sections():
     assert s.asr.provider == "funasr_local"
     assert s.llm.provider == "ollama_local"
     assert s.export.provider == "docx_exporter"
+    assert s.extraction.engine == "naive"
     assert s.extraction.chunk.target_chars == 1500
     assert s.thresholds.asr.low_confidence == pytest.approx(0.70)
 
@@ -137,6 +138,28 @@ def test_llm_base_url_must_be_local():
 # ---------------------------------------------------------------------------
 # 配置校验的边界行为
 # ---------------------------------------------------------------------------
+
+def test_extraction_engine_defaults_to_naive():
+    """旧配置未声明引擎时仍使用朴素实现。"""
+    assert ExtractionConfig().engine == "naive"
+
+
+@pytest.mark.parametrize("engine", ["naive", "llm", "unknown"])
+def test_extraction_engine_validated_on_load(tmp_path: Path, engine: str):
+    """启动加载配置时只接受两种抽取引擎，未知值沿用配置校验异常。"""
+    from pydantic import ValidationError
+
+    cfg = tmp_path / "config"
+    shutil.copytree(CONFIG_DIR, cfg)
+    (cfg / "extraction.yaml").write_text(
+        yaml.safe_dump({"extraction": {"engine": engine}}), encoding="utf-8"
+    )
+    if engine == "unknown":
+        with pytest.raises(ValidationError, match="engine"):
+            load_settings(cfg)
+    else:
+        assert load_settings(cfg).extraction.engine == engine
+
 
 def test_overlap_must_be_less_than_chunk():
     with pytest.raises(ValueError, match="chunk_overlap_seconds"):
