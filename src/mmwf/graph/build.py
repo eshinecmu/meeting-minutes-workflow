@@ -257,7 +257,11 @@ def make_checkpointer(db_path: Path | str):
     p = Path(db_path)
     p.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(p), check_same_thread=False)
-    saver = SqliteSaver(conn)
+    from mmwf.graph.checkpoint_crypto import CheckpointSerializer
+
+    serde = CheckpointSerializer(p)
+    saver = SqliteSaver(conn, serde=serde)
+    saver.jsonplus_serde = serde
     try:
         saver.setup()
     except sqlite3.DatabaseError as exc:

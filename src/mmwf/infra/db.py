@@ -26,6 +26,7 @@ SQLAlchemy 仅在需要跨方言/连接池时按需引入（engine()）。
 from __future__ import annotations
 
 import sqlite3
+import base64
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -42,6 +43,39 @@ PRAGMAS: tuple[str, ...] = (
     "PRAGMA synchronous = NORMAL",
     "PRAGMA busy_timeout = 5000",
 )
+
+
+def _configure_field_crypto(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Encrypt before SQLite sees a value (including WAL); decode on app reads.
+
+    SQL writers explicitly mark sensitive expressions with mmwf_encrypt(). Legacy
+    unmarked rows remain readable; no plaintext migration is performed implicitly.
+    """
+    from mmwf.infra.crypto import FileCipher
+    from mmwf.infra.keystore import load_or_create_key
+
+    cipher = None
+    prefix = b'~mmwf:v1:'
+
+    def get_cipher():
+        nonlocal cipher
+        if cipher is None:
+            cipher = FileCipher(load_or_create_key(db_path.parent).key)
+        return cipher
+
+    def encrypt(value):
+        if value is None:
+            return None
+        raw = str(value).encode('utf-8')
+        return (prefix + base64.b64encode(get_cipher().encrypt_bytes(raw))).decode('ascii')
+
+    def decode(raw):
+        if raw.startswith(prefix):
+            return get_cipher().decrypt_bytes(base64.b64decode(raw[len(prefix):])).decode('utf-8')
+        return raw.decode('utf-8')
+
+    conn.create_function('mmwf_encrypt', 1, encrypt)
+    conn.text_factory = decode
 
 
 def connect(db_path: Path | str, *, readonly: bool = False) -> sqlite3.Connection:
@@ -62,6 +96,7 @@ def connect(db_path: Path | str, *, readonly: bool = False) -> sqlite3.Connectio
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 5000")
         conn.row_factory = sqlite3.Row
+        _configure_field_crypto(conn, db_path)
         return conn
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -70,6 +105,7 @@ def connect(db_path: Path | str, *, readonly: bool = False) -> sqlite3.Connectio
     for pragma in PRAGMAS:
         conn.execute(pragma)
     conn.row_factory = sqlite3.Row
+    _configure_field_crypto(conn, db_path)
     return conn
 
 

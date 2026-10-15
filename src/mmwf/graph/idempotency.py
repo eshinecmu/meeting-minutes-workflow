@@ -316,7 +316,7 @@ class IdempotencyStore:
             cur = conn.execute(
                 "INSERT OR IGNORE INTO idempotency_record "
                 "(idem_key, task_id, node_id, result_ref, created_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, mmwf_encrypt(?), ?)",
                 (idem_key, task_id, node_id, result_ref, self._now()),
             )
             return cur.rowcount == 1

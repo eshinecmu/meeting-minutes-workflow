@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import base64
 import json
 from pathlib import Path
 import tempfile
@@ -11,6 +12,8 @@ from mmwf.domain.review.gate_edit import canonical_json
 from mmwf.graph.idempotency import make_idempotency_key
 from mmwf.infra.audit import AuditLogger
 from mmwf.infra.db import connect_ctx, transaction
+from mmwf.infra.crypto import FileCipher
+from mmwf.infra.keystore import load_or_create_key
 
 
 def now_iso():
@@ -21,6 +24,24 @@ class GateStore:
     def __init__(self, db_path, data_root):
         self.db_path = Path(db_path)
         self.data_root = Path(data_root)
+        self.cipher = FileCipher(load_or_create_key(self.db_path.parent).key)
+
+    def _encode(self, record):
+        # Keep only the recovery marker queryable; payload and comments are sensitive.
+        wrapper = {'encrypted': base64.b64encode(self.cipher.encrypt_bytes(
+            canonical_json({k: v for k, v in record.items() if k != 'consumed'}).encode('utf-8'))).decode('ascii')}
+        if 'consumed' in record:
+            wrapper['consumed'] = record['consumed']
+        return canonical_json(wrapper)
+
+    def _decode(self, value):
+        wrapper = json.loads(value)
+        if 'encrypted' not in wrapper:
+            return wrapper  # legacy registration
+        record = json.loads(self.cipher.decrypt_bytes(base64.b64decode(wrapper['encrypted'])))
+        if 'consumed' in wrapper:
+            record['consumed'] = wrapper['consumed']
+        return record
 
     @staticmethod
     def key(meeting_id, gate, checkpoint_id):
@@ -30,7 +51,7 @@ class GateStore:
         with connect_ctx(self.db_path) as conn:
             row = conn.execute("SELECT result_ref FROM idempotency_record WHERE idem_key=?",
                                (self.key(meeting_id, gate, checkpoint_id),)).fetchone()
-        return json.loads(row[0]) if row else None
+        return self._decode(row[0]) if row else None
 
     def snapshot(self, meeting_id, checkpoint_id, content):
         # 编码整个 ID，避免检查点带路径分隔符；前缀也避免 '.' / '..'。
@@ -54,9 +75,9 @@ class GateStore:
             key = self.key(record["meeting_id"], record["gate"], record["checkpoint_id"])
             old = conn.execute("SELECT result_ref FROM idempotency_record WHERE idem_key=?", (key,)).fetchone()
             if old:
-                return json.loads(old[0])
+                return self._decode(old[0])
             conn.execute("INSERT INTO idempotency_record (idem_key, task_id, node_id, result_ref, created_at) VALUES (?,?,?,?,?)",
-                         (key, record["meeting_id"], "gate_decision", canonical_json(record), now_iso()))
+                         (key, record["meeting_id"], "gate_decision", self._encode(record), now_iso()))
             # 所有审计写入均由 SQLite 写锁串行保护链头，不仅依赖会议锁。
             audit.log(record["operator"], "gate_decision", "meeting", record["meeting_id"], detail, _conn=conn)
         return record
@@ -64,7 +85,7 @@ class GateStore:
     def registered(self):
         """只枚举待恢复登记；消费标记复用 result_ref JSON，不改表结构。"""
         with connect_ctx(self.db_path) as conn:
-            return [json.loads(r[0]) for r in conn.execute(
+            return [self._decode(r[0]) for r in conn.execute(
                 "SELECT result_ref FROM idempotency_record WHERE node_id='gate_decision' "
                 "AND COALESCE(json_extract(result_ref, '$.consumed'), 0)=0 ORDER BY created_at")]
 

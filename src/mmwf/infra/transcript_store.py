@@ -471,7 +471,7 @@ class TranscriptStore:
             version = int(row["version"]) + 1
 
             sets = [
-                "text = ?",
+                "text = mmwf_encrypt(?)",
                 "version = ?",
                 "reviewed = 1",
                 "reviewed_by = ?",
@@ -654,7 +654,7 @@ class TranscriptStore:
                         " (segment_id, meeting_id, audio_id, seq, start_ms, end_ms,"
                         "  text, confidence, speaker, speaker_conf, flags, reviewed,"
                         "  version)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,0,1)",
+                        " VALUES (?,?,?,?,?,?,mmwf_encrypt(?),?,mmwf_encrypt(?),?,?,0,1)",
                         (
                             f"{self._meeting_id}:{seq:05d}",
                             self._meeting_id,

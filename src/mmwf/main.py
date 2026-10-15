@@ -408,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     """启动服务（`python -m mmwf.main`）。
 
     顺序很重要：
-        1. 建令牌文件 —— 前端轮询它判断"后端好了没"，
+        1. 取得单会话锁，再建令牌文件 —— 前端轮询它判断"后端好了没"，
            所以要**在监听之前**写好，否则前端可能先看到端口文件、
            再读令牌时扑空。
         2. 选端口、写端口文件。
@@ -429,14 +429,27 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_settings()
     assert cfg.app.host in LOOPBACK_HOSTS, "C11：只允许回环地址"
 
-    token = api_deps.create_session_token()
-    port = cfg.app.port or _pick_free_port()
-    api_deps.write_port(port)
-
-    logger.info("mmwf 后端就绪：http://%s:%d%s", cfg.app.host, port, API_PREFIX)
-    logger.info("本次会话令牌已写入：%s", api_deps.token_path())
-
+    from mmwf.infra.session import active_session
     try:
+        with active_session(api_deps.app_dir(), cfg.resolve_path(cfg.app.data_dir) / 'mmwf.db'):
+            return _serve(cfg, uvicorn)
+    except MmwfError as exc:
+        logger.error('%s：%s', exc.code, exc.user_message)
+        return 1
+
+
+def _serve(cfg, uvicorn):
+    from mmwf.api.system import check_environment
+
+    for warning in check_environment():
+        logger.warning('%s', warning)
+
+    api_deps.create_session_token()
+    try:
+        port = cfg.app.port or _pick_free_port()
+        api_deps.write_port(port)
+        logger.info("mmwf 后端就绪：http://%s:%d%s", cfg.app.host, port, API_PREFIX)
+        logger.info("本次会话令牌已写入：%s", api_deps.token_path())
         uvicorn.run(
             create_app(cfg),
             host="127.0.0.1",       # 硬编码回环，不用 cfg.app.host 的别名形式

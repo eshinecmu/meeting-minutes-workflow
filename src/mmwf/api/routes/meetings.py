@@ -19,6 +19,7 @@ from fastapi import APIRouter, Body, Path as PathParam
 from mmwf.api import envelope as env
 from mmwf.domain.errors import EmptyTranscriptError, MmwfError
 from mmwf.infra.db import connect_ctx
+from mmwf.infra.audit import AuditLogger
 
 from ._context import Runtime
 from ._support import (
@@ -75,7 +76,8 @@ def register(router: APIRouter, rt: Runtime) -> None:
                     meeting_id, title, meeting_time, location, host,
                     attendees, absentees, recorder, classification,
                     template_id, status, created_by, created_at, updated_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,mmwf_encrypt(?),?,mmwf_encrypt(?),mmwf_encrypt(?),
+                          mmwf_encrypt(?),mmwf_encrypt(?),mmwf_encrypt(?),?,?,?,?,?,?)
                 """,
                 (
                     meeting_id,
@@ -158,6 +160,10 @@ def register(router: APIRouter, rt: Runtime) -> None:
         if warnings:
             data["warning"] = "；".join(warnings)
 
+        AuditLogger(rt.db_path).log(payload.get('operator') or 'unknown',
+                       'import_audio' if audio_paths else 'import_text',
+                       target_type='meeting', target_id=meeting_id,
+                       detail={'audio_count': len(audio_paths), 'text_import': bool(record_markdown)})
         return env.ok(data, "已接收")
 
     # -- ③ 触发流水线 --------------------------------------------------
