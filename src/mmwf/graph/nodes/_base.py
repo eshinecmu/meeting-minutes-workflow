@@ -36,6 +36,7 @@
 
 from __future__ import annotations
 
+import errno
 import logging
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -270,6 +271,8 @@ def translate_exception(node_id: str, exc: BaseException) -> MmwfError:
     """
     if isinstance(exc, MmwfError):
         return exc
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        return MmwfError(code="E9002", detail=str(exc), context={"node": node_id})
     return MmwfError(
         code="E9001",
         detail=f"节点 {node_id} 发生未预期错误：{type(exc).__name__}: {exc}",
