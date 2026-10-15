@@ -58,7 +58,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Iterable, Sequence
+from typing import TYPE_CHECKING, Iterable, Sequence
+
+if TYPE_CHECKING:
+    from mmwf.domain.docx._docx_backend import _Document, _Paragraph
+    from mmwf.domain.docx.font_check import FontReport
 
 from mmwf.domain.docx import patches as P
 from mmwf.domain.docx._docx_backend import WD_ALIGN_PARAGRAPH as wd_align
@@ -119,15 +123,15 @@ class Block:
 class RenderResult:
     """渲染结果。"""
 
-    doc: object
+    doc: _Document
     block_count: int
     table_count: int
     heading_count: int
     paragraph_count: int
     warnings: tuple[str, ...] = ()
-    font_report: object | None = None
+    font_report: FontReport | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, int | list[str]]:
         return {
             "blocks": self.block_count,
             "tables": self.table_count,
@@ -344,7 +348,7 @@ class RenderOptions:
     #: 是否在页脚加 `PAGE` 域页码（施工卡验收标准要求）。
     page_number: bool = True
     #: 已预检的字体报告（传入则不再探测，便于测试与复用）。
-    font_report: object | None = None
+    font_report: FontReport | None = None
     #: 显式的已装字体集合（测试用；None 走真实探测）。
     installed_fonts: set[str] | None = None
 
@@ -353,7 +357,7 @@ def _style(key: str) -> GBStyle:
     return GB_STYLES[key]
 
 
-def _apply_style(paragraph, style: GBStyle, *, actual_font: str,
+def _apply_style(paragraph: _Paragraph, style: GBStyle, *, actual_font: str,
                  options: RenderOptions) -> None:
     """给段落套上版式：对齐、缩进、行距。字体在 `_write_runs` 里设。
 
@@ -366,7 +370,7 @@ def _apply_style(paragraph, style: GBStyle, *, actual_font: str,
         P.set_fixed_line_spacing(paragraph, style.line_spacing_pt)
 
 
-def _write_runs(paragraph, text: str, style: GBStyle, *, actual_font: str,
+def _write_runs(paragraph: _Paragraph, text: str, style: GBStyle, *, actual_font: str,
                 options: RenderOptions) -> None:
     """写入文字并设字体。**每个 run 都要单独设中文字体**（事实 ①）。
 
@@ -379,7 +383,7 @@ def _write_runs(paragraph, text: str, style: GBStyle, *, actual_font: str,
     P.set_cjk_font(run, actual_font, style.size_pt, style.bold)
 
 
-def _render_page_number(doc, report, options: RenderOptions) -> None:
+def _render_page_number(doc: _Document, report: FontReport, options: RenderOptions) -> None:
     """给每个 section 的页脚加 `PAGE` 域页码。
 
     GB/T 9704 规定页码在版心外、居外侧（奇偶页分左右）。"居外侧"
@@ -413,7 +417,7 @@ def render_markdown_to_docx(
     markdown: str,
     *,
     options: RenderOptions | None = None,
-    doc=None,
+    doc: _Document | None = None,
 ) -> RenderResult:
     """把 Markdown 渲染成 docx（GB/T 9704 版式）。
 
@@ -520,7 +524,7 @@ def render_markdown_to_docx(
     )
 
 
-def _render_table(doc, rows: list[list[str]], *, report, options: RenderOptions) -> None:
+def _render_table(doc: _Document, rows: list[list[str]], *, report: FontReport, options: RenderOptions) -> None:
     """渲染一个表格。**这里是 C15 的战场。**"""
     if not rows or not rows[0]:
         return
