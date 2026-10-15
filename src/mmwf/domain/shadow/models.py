@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from ._types import _MeetingArgs, _ThresholdArgs, cast, overload
 import re
 
 WARNING = "影子生成，禁止交付"
@@ -25,7 +26,12 @@ SCORE_FIELDS = (
 )
 
 
-def freeze(value):
+@overload
+def freeze(value: Mapping[str, object]) -> Mapping[str, object]: ...
+@overload
+def freeze(value: object) -> object: ...
+
+def freeze(value: object) -> object:
     if isinstance(value, Mapping):
         return MappingProxyType({k: freeze(v) for k, v in value.items()})
     if isinstance(value, list):
@@ -33,7 +39,13 @@ def freeze(value):
     return value
 
 
-def thaw(value):
+@overload
+def thaw(value: Mapping[str, object]) -> dict[str, object]: ...
+@overload
+def thaw(value: object) -> object: ...
+
+
+def thaw(value: object) -> object:
     if isinstance(value, Mapping):
         return {k: thaw(v) for k, v in value.items()}
     if isinstance(value, tuple):
@@ -41,26 +53,26 @@ def thaw(value):
     return value
 
 
-def text(value, field):
+def text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field} 必须是非空字符串")
     return value
 
 
-def identifier(value, field):
-    text(value, field)
+def identifier(value: object, field: str) -> str:
+    value = text(value, field)
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", value):
         raise ValueError(f"{field} 非法标识或路径穿越")
     return value
 
 
-def integer(value, field, minimum=0):
+def integer(value: object, field: str, minimum: int = 0) -> int:
     if type(value) is not int or value < minimum:
         raise ValueError(f"{field} 必须是 >= {minimum} 的整数")
     return value
 
 
-def envelope(raw):
+def envelope(raw: object) -> None:
     if not isinstance(raw, dict) or type(raw.get("format_version")) is not int or raw["format_version"] != 1:
         raise ValueError("format_version 必须为整数 1")
     identifier(raw.get("batch_id"), "batch_id")
@@ -76,7 +88,7 @@ class ShadowMeeting:
     duration_seconds: int
     record_path: str
     segments_path: str
-    meeting_meta: Mapping
+    meeting_meta: Mapping[str, object]
     template_snapshot_path: str
     source_version: str
     fake_response_path: str | None = None
@@ -87,19 +99,21 @@ class ShadowBatch:
     batch_id: str
     dataset_kind: str
     meetings: tuple[ShadowMeeting, ...]
-    metadata: Mapping
+    metadata: Mapping[str, object]
 
 
-def parse_manifest(raw):
+def parse_manifest(raw: object) -> ShadowBatch:
     envelope(raw)
+    raw = cast(dict[str, object], raw)
     if raw["dataset_kind"] == "real":
         if raw.get("controlled_environment_confirmed") is not True:
             raise ValueError("real 必须声明 controlled_environment_confirmed=true")
         text(raw.get("operator_declaration"), "operator_declaration")
     if not isinstance(raw.get("meetings"), list) or not raw["meetings"]:
         raise ValueError("meetings 必须为非空数组")
-    meetings, seen = [], set()
-    for row in raw["meetings"]:
+    meetings: list[ShadowMeeting] = []
+    seen: set[str] = set()
+    for row in cast(list[dict[str, object]], raw["meetings"]):
         if not isinstance(row, dict):
             raise ValueError("meeting 必须为对象")
         mid = identifier(row.get("meeting_id"), "meeting_id")
@@ -113,11 +127,11 @@ def parse_manifest(raw):
             raise ValueError("meeting_meta 必须为对象")
         if raw["dataset_kind"] == "synthetic":
             text(row.get("fake_response_path"), "fake_response_path")
-        meetings.append(ShadowMeeting(**{k: freeze(row[k]) for k in ShadowMeeting.__dataclass_fields__ if k in row}))
+        meetings.append(ShadowMeeting(**cast("_MeetingArgs", {k: freeze(row[k]) for k in ShadowMeeting.__dataclass_fields__ if k in row})))
     boundary = raw.get("long_meeting_boundary_seconds")
     if boundary is not None:
         integer(boundary, "long_meeting_boundary_seconds", 1)
-    return ShadowBatch(raw["batch_id"], raw["dataset_kind"], tuple(meetings),
+    return ShadowBatch(cast(str, raw["batch_id"]), cast(str, raw["dataset_kind"]), tuple(meetings),
                        freeze({k: v for k, v in raw.items() if k != "meetings"}))
 
 
@@ -125,15 +139,17 @@ def parse_manifest(raw):
 class MeetingScore:
     """已通过 E3 基本格式校验；不表示 E4 的版本/定位完整性已通过。"""
     meeting_id: str
-    data: Mapping
+    data: Mapping[str, object]
 
 
-def parse_scores(raw):
+def parse_scores(raw: object) -> tuple[MeetingScore, ...]:
     envelope(raw)
+    raw = cast(dict[str, object], raw)
     if not isinstance(raw.get("scores"), list):
         raise ValueError("scores 必须为数组")
-    out, seen = [], set()
-    for row in raw["scores"]:
+    out: list[MeetingScore] = []
+    seen: set[str] = set()
+    for row in cast(list[dict[str, object]], raw["scores"]):
         if not isinstance(row, dict) or any(k not in row or row[k] is None for k in SCORE_FIELDS if k != "supplementary"):
             raise ValueError("评分字段缺失或尚未填写")
         mid = identifier(row["meeting_id"], "meeting_id")
@@ -143,22 +159,22 @@ def parse_scores(raw):
         for k in SCORE_FIELDS[:8]:
             text(row[k], k)
         for k in ("candidate_fingerprint", "source_fingerprint", "template_fingerprint", "human_final_fingerprint"):
-            if not re.fullmatch(r"[0-9a-f]{64}", row[k]):
+            if not re.fullmatch(r"[0-9a-f]{64}", cast(str, row[k])):
                 raise ValueError(f"{k} 必须为 SHA-256 十六进制指纹")
         try:
-            reviewed_at = datetime.fromisoformat(row["reviewed_at"].replace("Z", "+00:00"))
+            reviewed_at = datetime.fromisoformat(cast(str, row["reviewed_at"]).replace("Z", "+00:00"))
         except ValueError as exc:
             raise ValueError("reviewed_at 必须为带时区的 ISO 时间") from exc
         if reviewed_at.tzinfo is None:
             raise ValueError("reviewed_at 必须带时区")
-        if row["reviewer"].strip() == row["author"].strip() or row["author_blind_to_candidate"] is not True:
+        if cast(str, row["reviewer"]).strip() == cast(str, row["author"]).strip() or row["author_blind_to_candidate"] is not True:
             raise ValueError("必须独立盲写与第三方评分")
         for key in ("required_elements", "human_topic_ids", "human_resolution_ids"):
             items = row[key]
             if not isinstance(items, list) or any(not isinstance(i, str) or not i.strip() for i in items) or len(set(items)) != len(items):
                 raise ValueError(f"{key} 必须为唯一字符串数组")
         presence = row["element_presence"]
-        if not row["required_elements"] or not isinstance(presence, dict) or set(presence) != set(row["required_elements"]) or any(type(v) is not bool for v in presence.values()):
+        if not row["required_elements"] or not isinstance(presence, dict) or set(presence) != set(cast(Sequence[str], row["required_elements"])) or any(type(v) is not bool for v in presence.values()):
             raise ValueError("element_presence 键集与布尔值不合约")
         for kind in ("topic", "resolution"):
             matches = row[f"{kind}_matches"]
@@ -171,7 +187,7 @@ def parse_scores(raw):
                 for k in ("human_id", "candidate_id", "evidence"):
                     text(match.get(k), k)
                 ids.append(match["human_id"])
-            if len(ids) != len(set(ids)) or not set(ids) <= set(row[f"human_{kind}_ids"]):
+            if len(ids) != len(set(ids)) or not set(ids) <= set(cast(Sequence[str], row[f"human_{kind}_ids"])):
                 raise ValueError("人工交集重复或超出总数")
         for k in ("statements_coverage_complete", "divergences_review_complete"):
             if row[k] is not True:
@@ -184,7 +200,7 @@ def parse_scores(raw):
             if not isinstance(row[key], list):
                 raise ValueError(f"{key} 必须为数组")
             ids = []
-            for item in row[key]:
+            for item in cast(list[dict[str, object]], row[key]):
                 if not isinstance(item, dict):
                     raise ValueError(f"{key} 条目必须为对象")
                 id_key = "issue_id" if key == "issue_reviews" else "id"
@@ -194,7 +210,7 @@ def parse_scores(raw):
                     text(item.get("candidate_location"), "candidate_location")
                     if type(item.get("supported")) is not bool or not isinstance(item.get("source_locations"), list):
                         raise ValueError("陈述必须逐条标记布尔支持与源定位数组")
-                    if any(not isinstance(loc, str) or not loc.strip() for loc in item["source_locations"]):
+                    if any(not isinstance(loc, str) or not loc.strip() for loc in cast(list[object], item["source_locations"])):
                         raise ValueError("source_locations 必须为非空定位字符串数组")
                     if item["supported"] and not item["source_locations"]:
                         raise ValueError("supported=true 必须填写源定位")
@@ -215,21 +231,22 @@ def parse_scores(raw):
     return tuple(out)
 
 
-def score_template():
+def score_template() -> dict[str, object]:
     return {k: None for k in SCORE_FIELDS}
 
 
-def record_template():
+def record_template() -> dict[str, object]:
     return {k: None for k in RECORD_FIELDS}
 
 
-def parse_records(raw):
+def parse_records(raw: object) -> tuple[Mapping[str, object], ...]:
     """记录表投影的基本类型校验；与权威 scores 的逐行核对留给 E4。"""
     envelope(raw)
+    raw = cast(dict[str, object], raw)
     if not isinstance(raw.get("records"), list):
         raise ValueError("records 必须为数组")
-    seen = set()
-    for sequence, row in enumerate(raw["records"], 1):
+    seen: set[str] = set()
+    for sequence, row in enumerate(cast(list[dict[str, object]], raw["records"]), 1):
         if not isinstance(row, dict) or set(row) != set(RECORD_FIELDS):
             raise ValueError("记录表字段不合约")
         if type(row["sequence"]) is not int or row["sequence"] != sequence:
@@ -250,14 +267,14 @@ def parse_records(raw):
             if row[k] is not None:
                 integer(row[k], k)
         for a, b in (("topics_matched", "topics_human"), ("resolutions_matched", "resolutions_human"), ("ungrounded_count", "statement_count")):
-            if row[a] is not None and row[b] is not None and row[a] > row[b]:
+            if row[a] is not None and row[b] is not None and cast(int, row[a]) > cast(int, row[b]):
                 raise ValueError("记录表分子超过分母")
         classes = row["divergence_classes"]
         if classes is not None and (not isinstance(classes, list) or any(c not in ("更保守", "更激进", "系统错误") for c in classes)):
             raise ValueError("divergence_classes 必须为分类数组或 null")
         if not isinstance(row["notes"], str):
             raise ValueError("notes 必须为字符串")
-    return tuple(freeze(row) for row in raw["records"])
+    return tuple(freeze(row) for row in cast(list[dict[str, object]], raw["records"]))
 
 
 @dataclass(frozen=True)
@@ -265,8 +282,8 @@ class EvaluationBatch:
     """文件层已装载的批次及定位文档；领域函数不接触路径或文件。"""
     batch_id: str
     dataset_kind: str
-    meetings: tuple[Mapping, ...]
-    metadata: Mapping
+    meetings: tuple[Mapping[str, object], ...]
+    metadata: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -276,7 +293,7 @@ class Thresholds:
     resolution_recall_min: float
     ungrounded_max: float
     structure_min: float
-    agreement: Mapping
+    agreement: Mapping[str, object]
 
 
 @dataclass(frozen=True)
@@ -290,10 +307,10 @@ class Metric:
 
 @dataclass(frozen=True)
 class ShadowSummary:
-    data: Mapping
+    data: Mapping[str, object]
 
 
-def parse_thresholds(raw):
+def parse_thresholds(raw: object) -> Thresholds:
     """阈值是显式工具输入，不读取或修改项目配置。"""
     import math
     fields = tuple(Thresholds.__dataclass_fields__)
@@ -301,7 +318,7 @@ def parse_thresholds(raw):
         raise ValueError("thresholds 字段不合约")
     for key in fields[:-1]:
         v = raw[key]
-        if type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1:
+        if type(v) not in (int, float) or not math.isfinite(cast(float, v)) or not 0 <= cast(float, v) <= 1:
             raise ValueError(f"{key} 必须为 [0,1] 有限比例")
     if raw["ungrounded_max"] != 0 or raw["structure_min"] != 1:
         raise ValueError("无依据与结构红线不得放宽")
@@ -319,4 +336,4 @@ def parse_thresholds(raw):
     if len(a["meeting_kinds"]) != 4:
         raise ValueError("agreement 必须约定四类会议或其映射")
     integer(a.get("long_meeting_boundary_seconds"), "long_meeting_boundary_seconds", 1)
-    return Thresholds(**{k: freeze(raw[k]) for k in fields})
+    return Thresholds(**cast("_ThresholdArgs", {k: freeze(raw[k]) for k in fields}))

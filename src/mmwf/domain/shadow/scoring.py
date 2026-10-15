@@ -4,12 +4,16 @@ from __future__ import annotations
 from dataclasses import asdict
 from fractions import Fraction
 import re
+from collections.abc import Mapping, Sequence
+from ._types import (MetricData, ScoreData, Agreement, EvaluationMeeting, Record,
+                     RiskCounts, RiskResult, ActionPopulation, _EmptyRecordMetrics, cast)
 
-from .models import (Metric, ShadowSummary, freeze, parse_scores, thaw, envelope)
+from .models import (Metric, ShadowSummary, freeze, parse_scores, thaw, envelope,
+                     EvaluationBatch, Thresholds, MeetingScore)
 from .risks import aggregate_risks
 
 
-def resolve_location(documents, location):
+def resolve_location(documents: Mapping[str, object], location: object) -> None:
     """允许显式文件的 JSON Pointer 或权威分段 seg-N；不做模糊文本匹配。"""
     if not isinstance(location, str) or "#" not in location:
         raise ValueError("定位须为 文件#JSON-Pointer 或 文件#seg-N")
@@ -18,7 +22,7 @@ def resolve_location(documents, location):
         raise ValueError(f"定位文件不存在：{name}")
     value = documents[name]
     if anchor.startswith("seg-"):
-        if not isinstance(value, (list, tuple)) or not any(str(s.get("seq")) == anchor[4:] for s in value):
+        if not isinstance(value, (list, tuple)) or not any(str(cast(Mapping[str, object], s).get("seq")) == anchor[4:] for s in value):
             raise ValueError("源分段定位不存在")
         return
     if not anchor.startswith("/"):
@@ -26,20 +30,20 @@ def resolve_location(documents, location):
     try:
         for part in anchor[1:].split("/"):
             part = part.replace("~1", "/").replace("~0", "~")
-            value = value[int(part)] if isinstance(value, (list, tuple)) and part.isdecimal() else value[part]
+            value = value[int(part)] if isinstance(value, (list, tuple)) and part.isdecimal() else cast(Mapping[str, object], value)[part]
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise ValueError(f"定位不存在：{location}") from exc
     if value is None or value == "":
         raise ValueError("定位内容为空")
 
 
-def validate_scores(batch, scores):
+def validate_scores(batch: EvaluationBatch, scores: Mapping[str, object]) -> tuple[MeetingScore, ...]:
     """缺评留给整批 INCOMPLETE；额外、混批、改稿或非法定位直接拒绝。"""
     envelope(scores)
     if scores["batch_id"] != batch.batch_id or scores["dataset_kind"] != batch.dataset_kind:
         raise ValueError("评分混批或数据性质不一致")
     parsed = parse_scores(scores)
-    meetings = {m["meeting_id"]: m for m in batch.meetings}
+    meetings = {cast(EvaluationMeeting, m)["meeting_id"]: cast(EvaluationMeeting, m) for m in batch.meetings}
     if len(meetings) != len(batch.meetings):
         raise ValueError("计划会议 id 重复")
     for score in parsed:
@@ -47,13 +51,13 @@ def validate_scores(batch, scores):
             raise ValueError("评分含额外会议")
         meeting = meetings[score.meeting_id]
         candidate = meeting["candidate"]
-        row = score.data
+        row = cast(ScoreData, score.data)
         for field in ("candidate_fingerprint", "source_fingerprint", "template_fingerprint"):
-            if row[field] != candidate[field]:
+            if cast(Mapping[str, object], row)[field] != candidate[field]:
                 raise ValueError(f"{field} 不匹配，改稿须重新评分")
         docs = meeting["documents"]
         for kind, section in (("topic", "topics"), ("resolution", "resolutions")):
-            for match in row[f"{kind}_matches"]:
+            for match in cast(Sequence[Mapping[str, str]], cast(Mapping[str, object], row)[f"{kind}_matches"]):
                 path = match["candidate_id"]
                 pattern = r"topics\[\d+\]" if kind == "topic" else r"topics\[\d+\]\.resolutions\[\d+\]"
                 if not re.fullmatch(pattern, path):
@@ -82,22 +86,22 @@ def validate_scores(batch, scores):
     return parsed
 
 
-def _metric(n, d, threshold, *, maximum=False):
+def _metric(n: int, d: int, threshold: float, *, maximum: bool = False) -> MetricData:
     passed = None if not d else ((Fraction(n, d) <= Fraction(str(threshold))) if maximum else
                                  (Fraction(n, d) >= Fraction(str(threshold))))
-    return asdict(Metric(n, d, n / d if d else None, threshold, passed))
+    return cast(MetricData, asdict(Metric(n, d, n / d if d else None, threshold, passed)))
 
 
-def _merge_risk(rows):
+def _merge_risk(rows: Sequence[RiskCounts]) -> RiskCounts:
     keys = ("total", "reviewed", "true_positive", "false_positive", "uncertain", "unreviewed", "numerator", "denominator")
-    result = {k: sum(r[k] for r in rows) for k in keys}
-    result.update(rate=result["numerator"] / result["denominator"] if result["denominator"] else None,
+    result = cast(RiskCounts, {k: sum(cast(Mapping[str, int], r)[k] for r in rows) for k in keys})
+    cast(dict[str, object], result).update(rate=result["numerator"] / result["denominator"] if result["denominator"] else None,
                   coverage=result["reviewed"] / result["total"] if result["total"] else None,
                   complete=all(r["complete"] for r in rows))
     return result
 
 
-def _action_population(score, risk):
+def _action_population(score: ScoreData, risk: RiskResult) -> ActionPopulation:
     """可选人工待办全集：独立分母，不替换降级事件分母。"""
     evidence = score.get("supplementary") or {}
     ids = evidence.get("real_action_ids")
@@ -118,7 +122,7 @@ def _action_population(score, risk):
         if pair in seen:
             raise ValueError("人工待办对应关系重复")
         seen.add(pair)
-        label = labels.get(match["issue_id"], {})
+        label = cast(Mapping[str, object], labels.get(match["issue_id"], {}))
         if label.get("verdict") != "uncertain" and label.get("false_downgrade") is True:
             affected.add(match["action_id"])
     covered = {m["issue_id"] for m in matches}
@@ -128,37 +132,41 @@ def _action_population(score, risk):
             "real_action_ids": list(ids), "downgrade_action_matches": thaw(matches)}
 
 
-def aggregate_metrics(batch, scores, thresholds):
+def aggregate_metrics(batch: EvaluationBatch, scores: Mapping[str, object],
+                      thresholds: Thresholds) -> ShadowSummary:
     parsed = validate_scores(batch, scores)
-    by_id = {s.meeting_id: s.data for s in parsed}
+    by_id = {s.meeting_id: cast(ScoreData, s.data) for s in parsed}
     positions = {s.meeting_id: i for i, s in enumerate(parsed)}
-    a = thresholds.agreement
-    rows, risks, gaps = [], [], list(batch.metadata.get("gaps", ()))
+    a = cast(Agreement, thresholds.agreement)
+    rows: list[Record] = []
+    risks: list[RiskResult] = []
+    gaps = list(cast(Sequence[str], batch.metadata.get("gaps", ())))
     divergences = {c: {"count": 0, "meeting_count": 0} for c in ("更保守", "更激进", "系统错误")}
     supplementary = []
-    for sequence, meeting in enumerate(batch.meetings, 1):
+    for sequence, raw_meeting in enumerate(batch.meetings, 1):
+        meeting = cast(EvaluationMeeting, raw_meeting)
         mid = meeting["meeting_id"]
         score = by_id.get(mid)
-        row = {"sequence": sequence, "meeting_name": meeting["name"], "meeting_kind": meeting["meeting_kind"],
+        row: Record = {"sequence": sequence, "meeting_name": meeting["name"], "meeting_kind": meeting["meeting_kind"],
                "duration_seconds": meeting["duration_seconds"], "meeting_id": mid, "batch_id": batch.batch_id,
                "dataset_kind": batch.dataset_kind, "score_path": str(batch.metadata.get("scores_path", "scores.json")) +
                (f"#/scores/{positions[mid]}" if mid in positions else f"#unscored-meeting={mid}"),
                "notes": meeting.get("failure_reason", ""),
-               **{k: None for k in ("elements_complete", "topics_matched", "topics_human", "resolutions_matched",
-                                    "resolutions_human", "ungrounded_count", "statement_count", "structure_compliant", "divergence_classes")}}
+               **cast("_EmptyRecordMetrics", {k: None for k in ("elements_complete", "topics_matched", "topics_human", "resolutions_matched",
+                                    "resolutions_human", "ungrounded_count", "statement_count", "structure_compliant", "divergence_classes")})}
         if score:
             if set(score["required_elements"]) != set(a["required_elements"]):
                 raise ValueError("评分必填项与批次约定不一致")
-            row.update(elements_complete=all(score["element_presence"].values()),
+            cast(dict[str, object], row).update(elements_complete=all(score["element_presence"].values()),
                        topics_matched=len(score["topic_matches"]), topics_human=len(score["human_topic_ids"]),
                        resolutions_matched=len(score["resolution_matches"]), resolutions_human=len(score["human_resolution_ids"]),
                        ungrounded_count=sum(not s["supported"] for s in score["statements"]),
                        statement_count=len(score["statements"]), structure_compliant=score["structure_compliant"],
                        divergence_classes=[d["class"] for d in score["divergences"]])
             for c, counts in divergences.items():
-                count = row["divergence_classes"].count(c)
-                counts["count"] += count
-                counts["meeting_count"] += bool(count)
+                divergence_count = cast(list[str], row["divergence_classes"]).count(c)
+                counts["count"] += divergence_count
+                counts["meeting_count"] += bool(divergence_count)
             supplementary.append({"meeting_id": mid, "evidence": thaw(score.get("supplementary")),
                                   "status": "PROVIDED_NOT_VERIFIED" if score.get("supplementary") else "PENDING"})
         else:
@@ -177,8 +185,8 @@ def aggregate_metrics(batch, scores, thresholds):
     complete = (len(parsed) == total and batch.metadata.get("complete", True) is True and
                 all(m["status"] == "generated" and m.get("issues_complete", True) is True for m in batch.meetings) and
                 all(r["complete"] for r in risks))
-    def count(key):
-        return sum(r[key] or 0 for r in rows)
+    def count(key: str) -> int:
+        return sum(cast(Mapping[str, int | None], r)[key] or 0 for r in rows)
     metrics = {
         "required_elements": _metric(count("elements_complete"), total, thresholds.required_elements_min),
         "topic_recall": _metric(count("topics_matched"), count("topics_human"), thresholds.topic_recall_min),
@@ -189,15 +197,15 @@ def aggregate_metrics(batch, scores, thresholds):
     # 不完整批次保留原始数，但不将已评分子集描述为全批次达标。
     if not complete:
         for metric in metrics.values():
-            metric.update(value=None, passed=None)
+            cast(dict[str, object], metric).update(value=None, passed=None)
     evaluable = all(m["denominator"] for m in metrics.values())
     quality = complete and evaluable and all(m["passed"] for m in metrics.values()) and not (
         divergences["更激进"]["count"] or divergences["系统错误"]["count"])
-    kinds = {m["meeting_kind"] for m in batch.meetings}
+    kinds = {cast(EvaluationMeeting, m)["meeting_kind"] for m in batch.meetings}
     boundary = a["long_meeting_boundary_seconds"]
     coverage = {"four_kinds": set(a["meeting_kinds"]) <= kinds,
-                "short": any(m["duration_seconds"] < boundary for m in batch.meetings),
-                "long": any(m["duration_seconds"] >= boundary for m in batch.meetings)}
+                "short": any(cast(EvaluationMeeting, m)["duration_seconds"] < boundary for m in batch.meetings),
+                "long": any(cast(EvaluationMeeting, m)["duration_seconds"] >= boundary for m in batch.meetings)}
     eligible = bool(quality and batch.dataset_kind == "real" and total >= 20 and all(coverage.values()) and a["confirmed"])
     if batch.dataset_kind == "real":
         if total < 20:
@@ -208,15 +216,15 @@ def aggregate_metrics(batch, scores, thresholds):
             gaps.append("阈值约定未确认")
     if count("ungrounded_count"):
         gaps.append("出现无依据陈述：回到阶段 1 整改，保留失败批次后重新验证")
-    groups = {}
+    groups: dict[tuple[str, str], list[RiskCounts]] = {}
     for risk in risks:
         for group in risk["groups"]:
             groups.setdefault((group["source"], group["code"]), []).append(group)
     populations = [r["action_population"] for r in risks]
     supplied = [p for p in populations if p["denominator"] is not None]
     population_complete = bool(populations) and all(p["status"] == "REVIEWED" for p in populations)
-    population_n = sum(p["numerator"] for p in supplied)
-    population_d = sum(p["denominator"] for p in supplied)
+    population_n = sum(cast(int, p["numerator"]) for p in supplied)
+    population_d = sum(cast(int, p["denominator"]) for p in supplied)
     population_summary = {"status": "REVIEWED" if population_complete else "PENDING",
         "provided_meetings": len(supplied), "planned_meetings": total,
         "numerator": population_n if supplied else None, "denominator": population_d if supplied else None,
@@ -226,8 +234,8 @@ def aggregate_metrics(batch, scores, thresholds):
             "status": "INCOMPLETE" if not complete else ("EVALUATED" if evaluable else "NOT_EVALUABLE"),
             "complete": complete, "metrics": metrics, "thresholds": {k: thaw(getattr(thresholds, k)) for k in thresholds.__dataclass_fields__},
             "records": rows, "per_meeting_recall": [{"meeting_id": r["meeting_id"],
-                "topics": r["topics_matched"] / r["topics_human"] if r["topics_human"] else None,
-                "resolutions": r["resolutions_matched"] / r["resolutions_human"] if r["resolutions_human"] else None} for r in rows],
+                "topics": cast(int, r["topics_matched"]) / r["topics_human"] if r["topics_human"] else None,
+                "resolutions": cast(int, r["resolutions_matched"]) / r["resolutions_human"] if r["resolutions_human"] else None} for r in rows],
             "divergences": divergences, "coverage": coverage,
             "risks": {"meetings": risks, "downgrade": _merge_risk([r["downgrade"] for r in risks]),
                       "rules": _merge_risk([r["rules"] for r in risks]), "action_population": population_summary,
