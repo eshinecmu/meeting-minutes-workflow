@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from typing import TypeGuard, cast
 
 from mmwf.domain.template import MinutesTemplate, TemplateFormatError, normalize_expression
 
@@ -18,23 +19,23 @@ _LEVELS = (
 )
 
 
-def _issue(rule: str, field: str, detail: str, **extra) -> dict:
+def _issue(rule: str, field: str, detail: str, **extra: object) -> dict[str, object]:
     return {"rule": rule, "field": field, "detail": detail, **extra}
 
 
-def _present(value) -> bool:
+def _present(value: object) -> TypeGuard[str]:
     return isinstance(value, str) and bool(value.strip()) and "待补充" not in value
 
 
-def _topics(minutes: Mapping):
+def _topics(minutes: Mapping[str, object]) -> Iterator[tuple[str, Mapping[str, object]]]:
     raw = minutes.get("topics")
     if isinstance(raw, list):
         for i, topic in enumerate(raw):
             if isinstance(topic, Mapping):
-                yield f"topics[{i}]", topic
+                yield f"topics[{i}]", cast(Mapping[str, object], topic)
 
 
-def check_required_elements(minutes: Mapping, template: MinutesTemplate) -> list[dict]:
+def check_required_elements(minutes: Mapping[str, object], template: MinutesTemplate) -> list[dict[str, object]]:
     """按配置检查缺键、占位、有效项数及逐项正则。"""
     issues = []
     for element in template.required_elements:
@@ -46,10 +47,10 @@ def check_required_elements(minutes: Mapping, template: MinutesTemplate) -> list
         valid = []
         wrong_container = False
 
-        def type_issue(path):
+        def type_issue(path: str) -> None:
             issues.append(_issue("required_type", path, f"{label}类型不正确"))
 
-        def collect(raw, path, text_key=None):
+        def collect(raw: object, path: str, text_key: str | None = None) -> None:
             nonlocal wrong_container
             if raw is None or (isinstance(raw, str) and not raw.strip()):
                 return
@@ -108,7 +109,7 @@ def check_required_elements(minutes: Mapping, template: MinutesTemplate) -> list
     return issues
 
 
-def _canonical_texts(minutes: Mapping):
+def _canonical_texts(minutes: Mapping[str, object]) -> Iterator[tuple[str, object]]:
     # 只列拟成文字段，绝不递归扫引文、refs、sections 或检查清单。
     for key in ("title", "meeting_time", "location", "host", "attendees", "recorder"):
         value = minutes.get(key)
@@ -132,14 +133,14 @@ def _canonical_texts(minutes: Mapping):
             for i, entry in enumerate(entries):
                 if not isinstance(entry, Mapping):
                     continue
-                fields = ("content", "owner", "deadline")
+                fields: tuple[str, ...] = ("content", "owner", "deadline")
                 if key == "pending_decisions":
                     fields += ("decision_maker",)
                 for field in fields:
                     yield f"{path}.{key}[{i}].{field}", entry.get(field)
 
 
-def check_forbidden_expressions(minutes: Mapping, template: MinutesTemplate) -> list[dict]:
+def check_forbidden_expressions(minutes: Mapping[str, object], template: MinutesTemplate) -> list[dict[str, object]]:
     """NFKC、casefold、去空白后的字面子串匹配，每字段每词一条。"""
     words = list(dict.fromkeys(normalize_expression(w) for w in template.style.get("readings_forbidden", [])))
     issues = []
@@ -153,7 +154,7 @@ def check_forbidden_expressions(minutes: Mapping, template: MinutesTemplate) -> 
     return issues
 
 
-def _reading_level(discussion: str, allowed) -> int | None:
+def _reading_level(discussion: str, allowed: Iterable[str]) -> int | None:
     text = discussion.strip()
     for prefix in sorted(allowed, key=len, reverse=True):
         if text.startswith(prefix):
@@ -178,12 +179,12 @@ def _reading_level(discussion: str, allowed) -> int | None:
     return None
 
 
-def check_reading_levels(minutes: Mapping, template: MinutesTemplate) -> list[dict]:
+def check_reading_levels(minutes: Mapping[str, object], template: MinutesTemplate) -> list[dict[str, object]]:
     """议题 readings 是标签集合；只据 discussion 的第一句定级。"""
     allowed = template.style.get("readings_allowed", [])
     issues = []
     for path, topic in _topics(minutes):
-        readings = topic.get("readings") or []
+        readings: object = topic.get("readings") or []
         # 完整 schema 已约束为 list[str]；诊断缺值时不强制模式校验。
         if not isinstance(readings, list):
             readings = [readings]
@@ -205,7 +206,7 @@ def check_reading_levels(minutes: Mapping, template: MinutesTemplate) -> list[di
     return issues
 
 
-def check_template(minutes: Mapping, template: MinutesTemplate) -> list[dict]:
+def check_template(minutes: Mapping[str, object], template: MinutesTemplate) -> list[dict[str, object]]:
     """固定按必填、禁词、领读语顺序聚合；每次返回独立清单。"""
     return (check_required_elements(minutes, template)
             + check_forbidden_expressions(minutes, template)

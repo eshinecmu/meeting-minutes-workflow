@@ -4,11 +4,13 @@ from __future__ import annotations
 import re
 from copy import deepcopy
 from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence, Set
+from typing import cast
 
 from mmwf.domain.extraction.merge import similarity
 from mmwf.domain.grounding.binder import union_refs
 from .consistency import explicit_names, numeric_tokens
-from .issues import aggregate_issues, make_issue
+from .issues import Issue, aggregate_issues, make_issue
 from .post_validation import KINDS
 
 _VERBS = ("完成", "提交", "落实", "推进", "负责", "牵头", "配合", "报送", "审核", "制定", "整改", "跟进", "组织", "开展")
@@ -19,54 +21,60 @@ _PLACEHOLDERS = (None, "", "暂无", "待补充")
 
 @dataclass(frozen=True)
 class GranularityResult:
-    minutes: dict
-    issues: list[dict]
-    changes: list[dict]
+    minutes: dict[str, object]
+    issues: list[Issue]
+    changes: list[dict[str, object]]
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, object]:
         return deepcopy({"minutes": self.minutes, "issues": self.issues, "changes": self.changes})
 
 
-def _conflicts(a, b):
+def _conflicts(a: Mapping[str, object], b: Mapping[str, object]) -> bool:
+    av: object
+    bv: object
     for key in ("owner", "deadline", "decision_maker"):
         av, bv = (str(item.get(key) or "").strip() for item in (a, b))
         if av not in _PLACEHOLDERS and bv not in _PLACEHOLDERS and av != bv:
             return True
+    extract: Callable[[str], Set[object]]
     for extract in (lambda s: {(t.category, t.value) for t in numeric_tokens(s)[0]},
                     lambda s: set(explicit_names(s))):
-        av, bv = extract(a["content"]), extract(b["content"])
+        av, bv = extract(cast(str, a["content"])), extract(cast(str, b["content"]))
         if av and bv and av != bv:
             return True
     # 约数等未支持表达本身不代表冲突；只有双方表达不同才保留两条。
-    av, bv = (set(numeric_tokens(item["content"])[1]) for item in (a, b))
+    av, bv = (set(numeric_tokens(cast(str, item["content"]))[1]) for item in (a, b))
     return bool(av and bv and av != bv)
 
 
-def normalize_granularity(minutes) -> GranularityResult:
+def normalize_granularity(minutes: dict[str, object]) -> GranularityResult:
     """补 owner→拆分→降级→时限→组首去重。changes 仅含本次新增修正。"""
     out = deepcopy(minutes)
     # 施工卡 §2.1：扩展元数据（稳定路径映射、粒度修正记录）仅置于 _context。
-    context = out.setdefault("_context", {})
-    history = context.setdefault("granularity_changes", [])
-    previous_metadata = context.get("granularity_items", {})
-    metadata, current_metadata = {}, {}
-    changes, issues = [], []
-    origins, final_paths = {}, {}
+    context = cast(dict[str, object], out.setdefault("_context", {}))
+    history = cast(list[dict[str, object]], context.setdefault("granularity_changes", []))
+    previous_metadata = cast(Mapping[str, dict[str, object]], context.get("granularity_items", {}))
+    metadata: dict[int, dict[str, object]] = {}
+    current_metadata: dict[str, dict[str, object]] = {}
+    changes: list[dict[str, object]] = []
+    issues: list[Issue] = []
+    origins: dict[int, list[str]] = {}
+    final_paths: dict[str, str] = {}
     # 保留本次处理的对象，避免跨议题对象回收后 id 被复用。
     tracked_items = []
     identities, final_id_paths, change_ids = {}, {}, {}
 
-    def record(code, path, message, item, **extra):
+    def record(code: str, path: str, message: str, item: Mapping[str, object], **extra: object) -> None:
         change = {"code": code, "original_path": path,
                   "original_content": item.get("content", ""), **extra}
         change_ids[id(change)] = id(item)
         changes.append(change)
         history.append(change)
 
-    for ti, topic in enumerate(out.get("topics", [])):
-        groups = {kind: [] for kind in KINDS}
+    for ti, topic in enumerate(cast(Sequence[dict[str, object]], out.get("topics", []))):
+        groups: dict[str, list[dict[str, object]]] = {kind: [] for kind in KINDS}
         for kind in KINDS:
-            for index, item in enumerate(topic.get(kind, [])):
+            for index, item in enumerate(cast(Sequence[dict[str, object]], topic.get(kind, []))):
                 path = f"topics[{ti}].{kind}[{index}]"
                 metadata[id(item)] = deepcopy(previous_metadata.get(path, {}))
                 tracked_items.append(item)
@@ -94,8 +102,8 @@ def normalize_granularity(minutes) -> GranularityResult:
                 for child in children:
                     destination = kind
                     if kind == "action_items" and (
-                        not any(v in child.get("content", "") for v in _VERBS)
-                        or not _TIME.search(child.get("content", "") + str(child.get("deadline") or ""))):
+                        not any(v in cast(str, child.get("content", "")) for v in _VERBS)
+                        or not _TIME.search(cast(str, child.get("content", "")) + str(child.get("deadline") or ""))):
                         destination = "pending_decisions"
                         child["decision_maker"] = child.get("decision_maker") or "暂无"
                         metadata[id(child)].setdefault("parent_path", path)
@@ -103,11 +111,12 @@ def normalize_granularity(minutes) -> GranularityResult:
                         record("ACTION_DOWNGRADED", path, "待办缺动词或时间词，已转为待决策事项", child)
                     groups[destination].append(child)
         for kind, items in groups.items():
-            merged, anchors = [], []
+            merged: list[dict[str, object]] = []
+            anchors: list[dict[str, object]] = []
             for item in items:
                 placed = False
                 for j, anchor in enumerate(anchors):
-                    if not item.get("content") or not anchor.get("content") or similarity(anchor["content"], metadata[id(item)].get("dedup_anchor", item["content"])) <= 0.90:
+                    if not item.get("content") or not anchor.get("content") or similarity(cast(str, anchor["content"]), cast(str, metadata[id(item)].get("dedup_anchor", item["content"]))) <= 0.90:
                         continue
                     path = f"topics[{ti}].{kind}[{j}]"
                     if _conflicts(merged[j], item):
@@ -119,7 +128,7 @@ def normalize_granularity(minutes) -> GranularityResult:
                     origins[id(first)].extend(origins[id(item)])
                     identities[id(first)].extend(identities[id(item)])
                     metadata[id(first)].setdefault("dedup_anchor", anchor["content"])
-                    if len(item["content"]) > len(first["content"]):
+                    if len(cast(str, item["content"])) > len(cast(str, first["content"])):
                         first["content"] = item["content"]
                     for key, value in item.items():
                         if first.get(key) in _PLACEHOLDERS and value not in _PLACEHOLDERS:
@@ -156,11 +165,11 @@ def normalize_granularity(minutes) -> GranularityResult:
     # 修正事实随结果保存；再次处理不产生新修正，诊断仍可展示。
     for change in changes:
         change["target"] = final_id_paths.get(change_ids[id(change)], final_paths.get(
-            change["original_path"], change["original_path"]))
+            cast(str, change["original_path"]), cast(str, change["original_path"])))
     for change in history:
-        issues.append(make_issue(change["code"], change["target"], {
+        issues.append(make_issue(cast(str, change["code"]), cast(str, change["target"]), {
             "OWNER_DEFAULTED": "责任人已补为暂无", "ITEM_SPLIT": "多事项已按连接词拆分",
             "ACTION_DOWNGRADED": "待办缺动词或时间词，已转为待决策事项",
-            "DUPLICATE_MERGED": "重复事项已合并并保留全部引用"}[change["code"]], source="granularity",
+            "DUPLICATE_MERGED": "重复事项已合并并保留全部引用"}[cast(str, change["code"])], source="granularity",
             level="warning" if change["code"] == "ACTION_DOWNGRADED" else "info", evidence=change))
     return GranularityResult(out, aggregate_issues(issues), changes)

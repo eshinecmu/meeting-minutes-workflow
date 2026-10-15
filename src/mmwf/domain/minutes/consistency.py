@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, DecimalException
+from typing import cast
 
-from .issues import aggregate_issues, make_issue
-from .post_validation import business_entries, source_segments, verify_references
+from mmwf.domain.segments import Segment
+
+from .issues import Issue, aggregate_issues, make_issue
+from .post_validation import VerifiedRef, business_entries, source_segments, verify_references
 from .template_checks import _canonical_texts
 
 _DIGITS = dict(zip("零〇一二两三四五六七八九", (0, 0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9)))
@@ -26,7 +30,7 @@ _ORG_END = ("处", "科", "局", "办公室", "部门", "工作组", "公司")
 _PLACEHOLDERS = {"", "暂无", "待补充"}
 
 
-def chinese_decimal(text):
+def chinese_decimal(text: str) -> Decimal:
     """十进制中文数（含万亿节与逐位小数），不使用浮点数。"""
     if re.fullmatch(r"\d+(?:\.\d+)?", text):
         return Decimal(text)
@@ -57,7 +61,7 @@ class NumericToken:
     value: object
 
 
-def numeric_tokens(text):
+def numeric_tokens(text: str | None) -> tuple[list[NumericToken], list[str]]:
     text = unicodedata.normalize("NFKC", text or "")
     text = re.sub(r"(?<=[0-9零〇一二两三四五六七八九十百千万亿点.])\s+(?=[0-9零〇一二两三四五六七八九十百千万亿点.元人名位%])", "", text)
     text = re.sub(r"(?<=\d),(?=\d{3}(?:\D|$))", "", text)
@@ -86,23 +90,28 @@ def numeric_tokens(text):
     return tokens, unsupported
 
 
-def explicit_names(text):
-    return _PERSON.findall(text or "")
+def explicit_names(text: str | None) -> list[str]:
+    return cast(list[str], _PERSON.findall(text or ""))
 
 
-def _scopes(minutes, segments):
+ReferenceCheck = tuple[list[VerifiedRef], list[Issue]]
+Scopes = Mapping[str, ReferenceCheck]
+
+
+def _scopes(minutes: Mapping[str, object], segments: Sequence[Segment]) -> dict[str, ReferenceCheck]:
     return {path: verify_references(entry, segments, path) for path, entry in business_entries(minutes)}
 
 
-def _scope(path, scopes, segments):
+def _scope(path: str, scopes: Scopes, segments: Sequence[Segment]) -> tuple[str, list[str], bool]:
     parent = max((p for p in scopes if path.startswith(p + ".")), key=len, default=None)
-    refs, issues = scopes.get(parent, ([], []))
+    refs, issues = cast(Mapping[str | None, ReferenceCheck], scopes).get(parent, ([], []))
     valid = refs and not any(i["blocking"] for i in issues)
     return ("\n".join(r["text"] for r in refs) if valid else "\n".join(s.text for s in segments),
             [r["segment_id"] for r in refs] if valid else [], bool(valid))
 
 
-def check_numbers(minutes, segments=None, *, record_markdown=None):
+def check_numbers(minutes: Mapping[str, object], segments: Iterable[Segment] | None = None, *,
+                  record_markdown: str | None = None) -> list[Issue]:
     source = source_segments(segments, record_markdown)
     scopes = _scopes(minutes, source)
     issues = []
@@ -112,7 +121,7 @@ def check_numbers(minutes, segments=None, *, record_markdown=None):
         tokens, unsupported = numeric_tokens(text)
         scope, ids, local = _scope(path, scopes, source)
         expected, _ = numeric_tokens(scope)
-        def add(code, message, actual):
+        def add(code: str, message: str, actual: str) -> None:
             issues.append(make_issue(code, path, message, source="consistency", evidence={
                 "actual": actual, "expected": [t.raw for t in expected], "segment_ids": ids}))
         for raw in unsupported:
@@ -126,26 +135,28 @@ def check_numbers(minutes, segments=None, *, record_markdown=None):
     return aggregate_issues(issues)
 
 
-def _term_value(term, key, default=None):
+def _term_value(term: object, key: str, default: object = None) -> object:
     return term.get(key, default) if isinstance(term, dict) else getattr(term, key, default)
 
 
-def check_person_names(minutes, segments=None, *, record_markdown=None, terms=()):
+def check_person_names(minutes: Mapping[str, object], segments: Iterable[Segment] | None = None, *,
+                  record_markdown: str | None = None, terms: Iterable[object] = ()) -> list[Issue]:
     source = source_segments(segments, record_markdown)
     scopes = _scopes(minutes, source)
-    aliases, orgs = {}, set()
+    aliases: dict[str, set[str]] = {}
+    orgs: set[str] = set()
     for term in terms:
         if not _term_value(term, "enabled", True):
             continue
-        canonical = _term_value(term, "canonical", "")
-        names = [canonical, *(_term_value(term, "aliases", []) or [])]
+        canonical = cast(str, _term_value(term, "canonical", ""))
+        names = [canonical, *cast(Sequence[str], _term_value(term, "aliases", []) or [])]
         category = _term_value(term, "category", _term_value(term, "kind", ""))
         if category == "org":
             orgs.update(names)
         if category == "person":
             for name in names:
                 aliases.setdefault(name, set()).add(canonical)
-    def person(name):
+    def person(name: str) -> bool:
         return name not in _PLACEHOLDERS and name not in orgs and not name.endswith(_ORG_END)
     full = "\n".join((s.speaker or "") + "：" + s.text for s in source)
     issues = []
