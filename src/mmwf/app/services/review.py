@@ -345,8 +345,9 @@ class ReviewService:
             now: ISO8601 时间戳（"记录整理时间"，测试可注入）。
                  生产调用不要传 —— 时间必须只在一处产生（与 audit 同规矩）。
             write_state: 是否把 `meeting.status` 推进到 `record_ready`。
-                默认 True（这是本步骤的**结果**）。设 False 用于
-                "只想看看会生成什么、别动状态"的场景。
+                默认 True，由服务校验并推进会议状态。编排层传 False，
+                由图控制生命周期；会议表可能仍是上次投递的闸口/终态，
+                不用它校验本次执行，但仍严格校验转写分段输入。
             extra_warnings: 上游告警（如 T1-05 的"引擎未提供置信度"），
                  会附在记录稿末尾的"生成提示"里 —— 让看稿子的人
                  也知道"这份稿子有几个段是不带分数的"。
@@ -357,7 +358,7 @@ class ReviewService:
         Raises:
             ReviewServiceError: 前置状态不对 / 缺转写分段。
         """
-        prev_status = self.current_status()
+        prev_status = self.current_status() if write_state else None
         if prev_status is not None and prev_status not in ALLOWED_PREV_STATES:
             raise ReviewServiceError(
                 f"当前状态是 {prev_status!r}，不能生成记录稿"

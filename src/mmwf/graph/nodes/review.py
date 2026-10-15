@@ -20,6 +20,8 @@
 `generate_record(write_state=...)` 默认会自己 `UPDATE meeting.status`。
 本节点显式传 `write_state=False` 并改由 `_base.touch_task_state` 推进
 `task_state` —— 否则"谁在改状态"会有两个来源，恢复时互相覆盖。
+服务也不再用会议表里上次投递的闸口/终态校验图内这次 review；
+图的连边负责执行顺序，`load_segments` 仍负责校验实际输入。
 这是把 T1-08 的"服务直接改状态"接进编排层的一次收口。
 """
 

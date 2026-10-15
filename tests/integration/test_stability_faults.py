@@ -222,6 +222,9 @@ def test_stab04_it23_enospc_reports_e9002_preserves_old_data(api, monkeypatch, f
     store = make_filestore(api.mid, api.cfg.resolve_path(api.cfg.app.data_dir))
     store.write_json('transcript/segments.json', {'segments': [{'text': '已有转写'}]})
     old_file = store.resolve('transcript/segments.json').read_bytes()
+    # This exercises ASR persistence, not IT-03's text-only review entry.
+    # Ingest is stubbed below, so persist its accepted audio input explicitly.
+    store.write_json('audio/input.json', {'audio_paths': ['synthetic.wav']})
     old_manifest = store.manifest_path.read_bytes()
     db = api.app.state.runtime.db_path
     with connect_ctx(db) as conn:
@@ -326,6 +329,8 @@ def model_load_failure(api, monkeypatch):
     (model_dir / 'model.bin').write_bytes(b'fake')
     audio = api.root / 'synthetic.wav'
     audio.write_bytes(b'fake')
+    store = make_filestore(api.mid, api.cfg.resolve_path(api.cfg.app.data_dir))
+    store.write_json('audio/input.json', {'audio_paths': [str(audio)]})
 
     def broken_model(**kwargs):
         raise RuntimeError('PRIVATE_MODEL_LOAD_FAILURE')

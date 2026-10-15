@@ -666,6 +666,26 @@ class TestGenerateRecord:
         svc.generate_record(now=GENERATED_AT, write_state=False)
         assert svc.current_status() == "reviewing"
 
+    @pytest.mark.parametrize("status", ["G2_awaiting", "G3_awaiting", "archived", "failed", "cancelled"])
+    def test_graph_owns_lifecycle_on_resubmission(self, svc, store, meeting_row, status):
+        """会议表保留上次投递的状态；图内 review 以本次转写输入为准。"""
+        meeting_row(status=status)
+        _write_segments(store, [_seg(1, "重新转写后的内容", 0.95)])
+        # Standalone use keeps its lifecycle guard, even with valid input.
+        with pytest.raises(ReviewServiceError, match="不能生成记录稿"):
+            svc.generate_record(now=GENERATED_AT)
+        result = svc.generate_record(now=GENERATED_AT, write_state=False)
+        assert "重新转写后的内容" in result.markdown
+        assert svc.current_status() == status
+        assert store.verify_manifest() == []
+
+    def test_graph_managed_review_still_requires_segments(self, svc, meeting_row):
+        meeting_row(status="G2_awaiting")
+        with pytest.raises(ReviewServiceError, match="转写分段不存在"):
+            svc.generate_record(now=GENERATED_AT, write_state=False)
+        assert svc.current_status() == "G2_awaiting"
+        assert svc.existing_versions() == []
+
     def test_version_increments_on_rerun(self, svc, store, meeting_row):
         """重跑**绝不覆盖**：v1 保留，新写 v2。
 
