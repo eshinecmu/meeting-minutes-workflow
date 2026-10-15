@@ -119,7 +119,7 @@ def make_idempotency_key(task_id: str, node_id: str, node_input: Any) -> str:
 #: 节点 -> 参与幂等键的状态字段。
 #:
 #: 只列**决定产物内容**的字段。刻意不列出 `operator` / `errors` /
-#: `validation_issues` 这类"过程数据"：它们变了不代表产物变了。
+#: `validation_issues` 这类过程数据；成文所用 issues 与纪要上下文显式纳入。
 #:
 #: 注意 `NODE_ARCHIVE` 用的是最终产物哈希 —— 归档的是"文件"，
 #: 只要导出物内容相同，重复归档就应当复用同一条目。
@@ -143,8 +143,8 @@ IDEMPOTENT_INPUT_KEYS: dict[str, tuple[str, ...]] = {
     "extract": ("record_markdown",),
     "generate": ("topics", "resolutions", "action_items"),
     # 成文是确定性渲染：结构化数据一样，Markdown 就一样
-    "assemble": ("minutes_structured",),
-    "export": ("minutes_markdown",),
+    "assemble": ("minutes_structured", "record_markdown", "transcript", "minutes", "issues"),
+    "export": ("minutes_markdown", "minutes_structured", "record_markdown", "transcript", "minutes"),
     "archive": ("export_paths",),
 }
 
@@ -169,6 +169,17 @@ def node_input_from_state(node_id: str, state: dict) -> dict:
             f"节点 {node_id!r} 没有登记幂等输入字段；"
             f"若它确实无副作用，不应调用本函数"
         )
+    if node_id in {"assemble", "export"}:
+        from mmwf.domain.minutes.state_compat import upgrade_legacy_state
+        state = upgrade_legacy_state(state)
+        context = (state.get("minutes") or {}).get("_context", {})
+        out = {k: state.get(k) for k in keys}
+        out["fingerprints"] = {
+            "source": content_hash({"record": state.get("record_markdown"), "segments": state.get("transcript")}),
+            "template": content_hash(context.get("template_snapshot") or context.get("template_fingerprint")),
+            "candidate": content_hash(state.get("minutes_structured") or state.get("minutes")),
+        }
+        return out
     return {k: state.get(k) for k in keys}
 
 

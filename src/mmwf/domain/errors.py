@@ -463,6 +463,16 @@ class SchemaViolationError(ExtractionError):
         super().__init__(code="E3002", detail=detail, context=ctx)
 
 
+class GroundingBlockedError(ExtractionError):
+    """E3002 的终态阻断语义；不改变结构重试的 WARNING。"""
+
+    def __init__(self, detail: str = "", **ctx: Any) -> None:
+        super().__init__(code="E3002", detail=detail, context=ctx)
+        self.severity = Severity.ERROR
+        self.title = "纪要依据不足"
+        self.user_message = "纪要中有内容找不到原文依据，已停止成文。请核对问题清单并修正来源后重试。"
+
+
 class GenerationTimeoutError(ExtractionError):
     """E3003：生成超时。"""
 

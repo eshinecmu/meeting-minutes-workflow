@@ -1082,7 +1082,11 @@ class TestRecordBodySeparation:
             f"{API}/meetings/{mid}/gate/G2/decide", json={"decision": "approve", "checkpoint_id": client.get(f"{API}/meetings/{mid}").json()["data"]["run"]["pending_gate"]["checkpoint_id"]}
         ).json()
         issues = r["data"]["pending_gate"]["payload"]["validation_issues"]
-        assert issues == [], [i["detail"] for i in issues]
+        # D4 生产检查新增会议必填、时间与一致性提示；仍须防止元信息表伪造议题。
+        assert not any(i.get("blocking") for i in issues)
+        assert not any(i["rule"] in {"topic_without_refs", "resolution_without_refs"} for i in issues)
+        assert not any("|" in str(i.get("evidence", {})) for i in issues)
+        assert any(i["source"] == "template" and "缺失" in i["detail"] for i in issues)
 
     def test_g2_payload_has_no_metadata_rows(self, client):
         """议题里不许出现 `| 会议时间 | 待补充 |` 这类表格行。"""

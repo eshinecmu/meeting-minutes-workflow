@@ -23,10 +23,13 @@ FastAPI 的线程池里偶发 `ProgrammingError`。
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any
 
+from mmwf.graph.idempotency import content_hash
 from mmwf.infra.audit import AuditLogger
+from mmwf.infra.db import connect_ctx
 from mmwf.settings import Settings
 
 from ._support import DEFAULT_OPERATOR, _config_dir
@@ -272,6 +275,24 @@ class Runtime:
         from mmwf.graph.runner import GraphRunner
 
         deps = Deps(settings=self.cfg)
+
+        def minutes_context(state):
+            # 装配层读资料，领域函数只消费快照；无会议的独立工厂测试允许空资料。
+            with connect_ctx(self.db_path) as conn:
+                row = conn.execute("SELECT * FROM meeting WHERE meeting_id = ?", (meeting_id,)).fetchone()
+            meta = dict(row) if row else {}
+            if isinstance(meta.get("attendees"), str):
+                meta["attendees"] = json.loads(meta["attendees"])
+            template = self.template_store().select(meta.get("template_id"),
+                                                    meeting_kind=meta.get("meeting_kind"))
+            snapshot = template.to_dict()
+            return {"meeting_meta": meta, "template_id": template.template_id,
+                    "template_version": template.version_no, "template_snapshot": snapshot,
+                    "template_fingerprint": content_hash(snapshot),
+                    "source_version": (state.get("review_result") or {}).get("version"),
+                    "source_fingerprint": content_hash(state.get("record_markdown") or "")}
+
+        deps.extra["minutes_context"] = minutes_context
         if self.cfg.extraction.engine == "llm":
             from mmwf.adapters.llm import make_llm_client
             from mmwf.graph.nodes.extraction import make_llm_extractor

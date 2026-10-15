@@ -1,32 +1,8 @@
-"""`extract` / `generate` / `validate` / `assemble` 四个节点 ——
-议题抽取、纪要起草、自检、成文（二期领域模块的编排侧封装）。
+"""议题抽取、纪要起草、自检与成文的纯工厂接缝。
 
-⚠️ 这四个节点现在是**委托壳**，不是完整实现
---------------------------------------------
-它们对应的领域模块 —— `domain/extraction`（分块分层抽取）、
-`domain/minutes`（体例化成文）、`domain/grounding`（溯源校验）——
-在施工排期里属于**二期**（T2-01 / T2-02 / T2-04），当前是空包
-（只剩 docstring）。
-
-但 **T1-10 必须现在做完**，因为它要交付的是"编排能力"：
-一次触发走完全程、闸口能停能恢复、断点能续、副作用幂等。
-这些能力**不依赖**抽取质量好不好 —— 用一份确定性的
-"朴素实现"就能把整条链路跑通并验收。
-
-所以本模块的取舍是：
-
-    · 提供一份**确定性的朴素实现**（`naive_extract` / `naive_generate`
-      / `naive_validate` / `naive_assemble`）：真的产出议题、真的渲染
-      Markdown，只是质量是"能用"级别，不是二期那种"分块抽取 + 语体对齐"。
-    · 留出 `extractor` / `generator` / `assembler` / `validator` 四个
-      注入点：二期把真正的领域实现插进来，**图不用改一行**。
-    · `naive_*` 的产物结构与二期实现**约定成同一套形状**
-      （议题 = `{"title", "refs", "owner"}`），这样二期替换实现时
-      下游（闸口送审、导出、溯源）的代码不用跟着改。
-
-这条"先用朴素实现跑通编排、后替换实现"的路径是有意选的：
-如果等二期领域模块做完再做编排，整个一期的编排能力就无从验收，
-而"编排"恰恰是本卡唯一要证明的东西。
+直接 make_* 保留原 callable 签名与朴素返回合同；生产图通过
+minutes_context 包装器固定模板快照、适配丰富原料并执行领域检查。
+抽取器可额外返回 minutes/issues，生产状态显式声明并保存两键。
 """
 
 from __future__ import annotations
@@ -149,6 +125,9 @@ def make_extract(
             # 清掉上一轮闸口的路由标记（见 interrupts.clear_route_marker）
             "_gate_route": None,
         }
+        for key in ("minutes", "issues"):
+            if key in got:
+                out[key] = got[key]
         if not topics:
             out["errors"] = errors
         return out
@@ -217,13 +196,7 @@ def make_llm_extractor(llm: Any, settings: Any = None,
     工厂把"用哪个 llm、什么参数"收在一个地方，节点只拿到一个
     `Callable[[str], dict]`。换引擎时节点一行不用改。
 
-    ⚠️ 只返回**图契约的三个键**（`topics` / `resolutions` / `action_items`）。
-    真引擎还会产出 `minutes`（SAD §10.2 形状）与 `issues`，但
-    `PipelineState` 里没有这两个字段 —— TypedDict 里未声明的键会被
-    **静默丢弃**。本卡**不动状态契约**（动它要改 `INPUT_FIELDS`/
-    `OUTPUT_FIELDS`，波及检查点兼容与一期已验收的编排测试）。
-    所以那两项留给**直接调用 `extract_minutes` 的调用方**
-    （验收脚本、将来的问题清单功能），不走图。
+    丰富原料与抽取问题显式透传，避免检查点丢失字段。
     """
     from mmwf.domain.extraction import DEFAULT_MAX_WORKERS, extract_minutes
 
@@ -233,7 +206,7 @@ def make_llm_extractor(llm: Any, settings: Any = None,
         res = extract_minutes(
             record_markdown or "", llm=llm, settings=settings, max_workers=workers
         )
-        # 抽取期的问题（块失败、无时间码…）记进日志 —— 图状态里没有地方放它们
+        # 日志保留过程提示；丰富原料与问题同时透传到图状态。
         for issue in res.issues:
             logger.warning("抽取提示：%s", issue.get("detail") or issue)
         return res.to_graph_dict()

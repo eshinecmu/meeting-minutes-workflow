@@ -97,6 +97,8 @@ class ExtractResult:
             "topics": self.topics,
             "resolutions": self.resolutions,
             "action_items": self.action_items,
+            "minutes": self.minutes,
+            "issues": self.issues,
         }
 
 
@@ -461,6 +463,20 @@ def _rich_minutes(
             "source_end_ms": (a.get("refs") or [{}])[0].get("end_ms")
                              if a.get("refs") else None,
         })
+    # 待决策不在 G2 三列表中，必须从丰富原料保留，交最终粒度处理。
+    for minutes in chunk_minutes:
+        for topic in minutes.topics:
+            if not topic.pending_decisions:
+                continue
+            bucket = by_topic.setdefault(topic.name, {
+                "name": topic.name, "discussion": topic.discussion,
+                "readings": list(topic.readings), "resolutions": [],
+                "action_items": [], "pending_decisions": [],
+            })
+            for pending in topic.pending_decisions:
+                item = pending.model_dump()
+                if item not in bucket["pending_decisions"]:
+                    bucket["pending_decisions"].append(item)
     out["topics"] = list(by_topic.values())
     return out
 

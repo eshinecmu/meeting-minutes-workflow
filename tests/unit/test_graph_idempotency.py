@@ -195,8 +195,9 @@ class TestIdempotentInputKeys:
             IDEM.node_input_from_state("gate_g2", {})
 
     def test_export_node_depends_on_markdown(self):
-        """导出键由成稿内容决定 —— 内容一样就不该导出第二份。"""
-        assert IDEM.IDEMPOTENT_INPUT_KEYS["export"] == ("minutes_markdown",)
+        """导出依赖配对候选、真实源与模板上下文。"""
+        assert IDEM.IDEMPOTENT_INPUT_KEYS["export"] == (
+            "minutes_markdown", "minutes_structured", "record_markdown", "transcript", "minutes")
 
     def test_different_markdown_yields_different_key(self):
         """内容变了必须允许再导一次（这是"重新导出"的合法路径）。"""
@@ -510,3 +511,15 @@ class TestConcurrencySafety:
         s1.put("k1", "m1", "export", "winner")
         s2.put("k1", "m1", "export", "loser")
         assert s2.get("k1").result_ref == "winner"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("record_markdown", "新来源"), ("transcript", [{"text": "新分段"}]),
+    ("minutes_structured", {"topics": [], "title": "新候选"}),
+    ("minutes", {"_context": {"template_snapshot": {"version_no": 2}}}),
+])
+def test_minutes_delivery_idempotency_tracks_source_template_and_candidate(field, value):
+    before = {"minutes_markdown": "同一正文", "minutes_structured": {"topics": []}}
+    after = {**before, field: value}
+    for node in ("assemble", "export"):
+        assert IDEM.node_input_from_state(node, before) != IDEM.node_input_from_state(node, after)

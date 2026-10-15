@@ -37,6 +37,7 @@ from mmwf.graph import interrupts as I
 from mmwf.graph import nodes as N
 from mmwf.graph import state as S
 from mmwf.graph.build import (
+    ROUTE_BLOCKED,
     ROUTE_GIVE_UP,
     ROUTE_OK,
     ROUTE_RETRY,
@@ -223,7 +224,7 @@ def build_test_app(
     g.add_edge(S.NODE_GENERATE, S.NODE_VALIDATE)
     g.add_conditional_edges(
         S.NODE_VALIDATE, route_after_validate,
-        {ROUTE_OK: S.NODE_ASSEMBLE, ROUTE_RETRY: S.NODE_GENERATE,
+        {ROUTE_BLOCKED: END, ROUTE_OK: S.NODE_ASSEMBLE, ROUTE_RETRY: S.NODE_GENERATE,
          ROUTE_GIVE_UP: S.NODE_ASSEMBLE},
     )
     g.add_edge(S.NODE_ASSEMBLE, S.NODE_GATE_G3)

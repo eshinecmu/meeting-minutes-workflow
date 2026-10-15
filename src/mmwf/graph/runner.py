@@ -342,10 +342,29 @@ class GraphRunner:
         """调 `invoke` 并落一次 `task_state` 打点。"""
         try:
             self.app.invoke(payload, self._cfg)
-        except MmwfError:
+        except MmwfError as exc:
+            from mmwf.domain.errors import GroundingBlockedError
+            if isinstance(exc, GroundingBlockedError):
+                values = self.values()
+                if values.get("stage") == "validation_blocked":
+                    self._touch(S.STATUS_FAILED, last_error=exc.user_message)
+                    raise
+                # 旧 next=assemble 的防御性硬检异常同样保留原稿与诊断。
+                from mmwf.domain.minutes.issues import aggregate_issues
+                issues = aggregate_issues(values.get("issues") or [], exc.context.get("issues", []))
+                self.app.update_state(self._cfg, {"stage": "validation_blocked", "issues": issues,
+                    "validation_issues": exc.context.get("issues", []),
+                    "errors": list(values.get("errors") or []) + [exc.to_dict()]})
+                self._touch(S.STATUS_FAILED, last_error=exc.user_message)
             raise
         except Exception as exc:
             raise B.translate_exception("runner", exc) from exc
+        # validate 已正常完成并持久化诊断；终态异常不再进入节点异常处理分支。
+        if self.values().get("stage") == "validation_blocked":
+            from mmwf.domain.errors import GroundingBlockedError
+            error = GroundingBlockedError()
+            self._touch(S.STATUS_FAILED, last_error=error.user_message)
+            raise error
 
     # -- 查询 ----------------------------------------------------------
 
@@ -436,6 +455,9 @@ class GraphRunner:
                     "updated_at = ? WHERE task_id = ?",
                     (status, last_error, _now_iso(), self.meeting_id),
                 )
+                if status == S.STATUS_FAILED:
+                    conn.execute("UPDATE meeting SET status = ?, updated_at = ? WHERE meeting_id = ?",
+                                 (status, _now_iso(), self.meeting_id))
         except Exception:  # pragma: no cover
             logger.warning("task_state 状态更新失败", exc_info=True)
 
@@ -482,6 +504,7 @@ def _derive_status(values: dict, snapshot: Any, pending: PendingGate | None) -> 
 
     优先级（从高到低）：
 
+        ⓪ 硬阻断标记 -> failed（重建后仍为失败）
         ① 闸口挂起  -> 该闸口的 awaiting 状态（`G2_awaiting` / `G3_awaiting`）
         ② 显式 stage -> 状态里被显式写过的 stage（如 archive 写的 `archived`）
         ③ 已取消    -> `cancelled`
@@ -491,6 +514,8 @@ def _derive_status(values: dict, snapshot: Any, pending: PendingGate | None) -> 
     为什么闸口优先级最高：`interrupt` 时节点的**状态增量还没合并**，
     所以 `values` 里读不到 `G2_awaiting` —— 只能从"挂起的闸口"推。
     """
+    if values.get("stage") == "validation_blocked":
+        return S.STATUS_FAILED
     if pending is not None:
         return f"{pending.gate}_awaiting"
     stage = values.get("stage")

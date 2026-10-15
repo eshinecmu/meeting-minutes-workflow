@@ -60,7 +60,8 @@ logger = logging.getLogger(__name__)
 #: 自检不通过时的重试上限（SAD §5.1 的 `retry` 边）。
 MAX_VALIDATE_RETRY = N.MAX_VALIDATE_RETRY
 
-#: `validate` 的路由值（SAD §5.1：ok / retry / give_up）。
+#: `validate` 的路由值；硬阻断优先于结构重试。
+ROUTE_BLOCKED = "blocked"
 ROUTE_OK = "ok"
 ROUTE_RETRY = "retry"
 ROUTE_GIVE_UP = "give_up"
@@ -99,7 +100,8 @@ class Deps:
 def route_after_validate(state: dict) -> str:
     """`validate` 之后走哪条边（SAD §5.1）。
 
-        ok       -> assemble   自检通过
+        blocked  -> END        无原文依据，持久化后停止
+        ok       -> assemble   自检通过 / 软问题仅报告
         retry    -> generate   没过，重生成（最多 `MAX_VALIDATE_RETRY` 次）
         give_up  -> assemble   **超次数也成文，但带问题清单**
 
@@ -107,8 +109,13 @@ def route_after_validate(state: dict) -> str:
     **不静默丢弃**"（C03 的配套）。把失败的任务直接丢掉，
     等于让用户白等两小时且什么也拿不到 —— 带问题的稿子至少能人工改。
     """
+    if state.get("stage") == "validation_blocked" or any(
+        isinstance(i, dict) and i.get("blocking") for i in state.get("validation_issues") or []
+    ):
+        return ROUTE_BLOCKED
     issues = state.get("validation_issues") or []
-    if not issues:
+    # 仅全量新式软诊断直接通过；混有旧式结构问题时保留 retry/give_up。
+    if not issues or all(isinstance(i, dict) and "blocking" in i for i in issues):
         return ROUTE_OK
     retry = int(state.get("gen_retry") or 0)
     if retry > MAX_VALIDATE_RETRY:
@@ -153,6 +160,11 @@ def build_pipeline(deps: Deps | None = None, *, checkpointer: Any = None,
 
         `on_node` 为 None 时（生产默认）**不加包装**，保持零开销。
         """
+        context_factory = d.extra.get("minutes_context")
+        if context_factory and name in {"extract", "generate", "validate", "assemble"}:
+            from mmwf.graph.nodes.minutes_context import production_node
+            fn = production_node(name, fn, context_factory, deps=d)
+
         if on_node is None:
             return fn
 
@@ -199,6 +211,7 @@ def build_pipeline(deps: Deps | None = None, *, checkpointer: Any = None,
         S.NODE_VALIDATE,
         route_after_validate,
         {
+            ROUTE_BLOCKED: END,
             ROUTE_OK: S.NODE_ASSEMBLE,
             ROUTE_RETRY: S.NODE_GENERATE,     # 校验不过 -> 重生成，最多 N 次
             ROUTE_GIVE_UP: S.NODE_ASSEMBLE,   # 超次数 -> 带问题清单成文
@@ -262,6 +275,7 @@ def thread_config(meeting_id: str) -> dict:
 
 __all__ = [
     "MAX_VALIDATE_RETRY",
+    "ROUTE_BLOCKED",
     "ROUTE_GIVE_UP",
     "ROUTE_OK",
     "ROUTE_RETRY",

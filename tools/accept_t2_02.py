@@ -300,11 +300,11 @@ def check_standard_6(tmp: Path) -> bool:
 
 def check_standard_7(tmp: Path) -> bool:
     template = _template(_store(tmp))
-    expected_keys = set("task_id meeting_id stage audio_paths chunk_plan transcript transcript_meta review_result record_markdown topics resolutions action_items pending_decisions minutes_structured minutes_markdown validation_issues gen_retry export_paths idem_keys errors operator _gate_route _gate_rejects".split())
-    # 固定施工前状态合同，不能只比较调用前后而漏掉已扩张的状态。
+    expected_keys = set("task_id meeting_id stage audio_paths chunk_plan transcript transcript_meta review_result record_markdown topics resolutions action_items minutes issues pending_decisions minutes_structured minutes_markdown validation_issues gen_retry export_paths idem_keys errors operator _gate_route _gate_rejects".split())
+    # 按 T2-04 D01 的两键与产物差量迁移固定合同，仍严格检查未授权扩张。
     outputs = {"ingest": ("audio_paths", "chunk_plan"), "transcribe": ("transcript", "transcript_meta"),
-        "review": ("review_result", "record_markdown"), "extract": ("topics", "resolutions", "action_items"),
-        "gate_g2": (), "generate": ("minutes_structured",), "validate": ("validation_issues", "gen_retry"),
+        "review": ("review_result", "record_markdown"), "extract": ("topics", "resolutions", "action_items", "minutes", "issues"),
+        "gate_g2": (), "generate": ("minutes_structured", "gen_retry"), "validate": ("validation_issues", "issues", "minutes_structured"),
         "assemble": ("minutes_markdown",), "gate_g3": (), "export": ("export_paths", "idem_keys"), "archive": ()}
     requires = {"ingest": (), "transcribe": ("audio_paths",), "review": ("transcript",), "extract": ("record_markdown",),
         "gate_g2": ("topics", "resolutions", "action_items"), "generate": ("topics", "resolutions", "action_items"),

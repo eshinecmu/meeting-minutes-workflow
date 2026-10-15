@@ -983,3 +983,22 @@ class TestRunnerConstruction:
         _ = r.app
         del r
         gc.collect()        # 触发 __del__；若它抛异常，这里会炸
+
+
+def test_post_invoke_blocked_error_does_not_rewrite_checkpoint(monkeypatch):
+    """已持久化的 validate 阻断只同步失败状态，不进入节点异常写回。"""
+    from unittest.mock import Mock
+    from mmwf.domain.errors import GroundingBlockedError
+
+    app = Mock()
+    runner = GraphRunner("blocked-post-invoke", app=app)
+    values = Mock(return_value={"stage": "validation_blocked", "issues": [{"blocking": True}]})
+    touch = Mock()
+    monkeypatch.setattr(runner, "values", values)
+    monkeypatch.setattr(runner, "_touch", touch)
+    with pytest.raises(GroundingBlockedError):
+        runner._invoke(None)
+    app.invoke.assert_called_once_with(None, runner._cfg)
+    app.update_state.assert_not_called()
+    values.assert_called_once_with()
+    touch.assert_called_once_with(S.STATUS_FAILED, last_error=GroundingBlockedError().user_message)

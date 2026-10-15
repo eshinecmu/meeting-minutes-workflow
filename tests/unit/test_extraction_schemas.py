@@ -94,7 +94,8 @@ def test_empty_input_never_calls_llm(text):
     """U-EX-10：空输入返回空数组且完全不调用模型。"""
     llm = FakeLlmClient(script=["不得调用"])
     result = extract_minutes(text, llm=llm)
-    assert result.to_graph_dict() == {"topics": [], "resolutions": [], "action_items": []}
+    assert result.to_graph_dict() == {"topics": [], "resolutions": [], "action_items": [],
+                                      "minutes": result.minutes, "issues": result.issues}
     assert not llm.calls
 
 
@@ -108,7 +109,8 @@ def test_chitchat_all_six_dimensions_are_empty():
     # 发言人由 attendees 表达；结论性意见、议定、待办、待决策均在议题内。
     assert result.minutes["attendees"] == []
     assert result.minutes["topics"] == []
-    assert result.to_graph_dict() == {"topics": [], "resolutions": [], "action_items": []}
+    assert result.to_graph_dict() == {"topics": [], "resolutions": [], "action_items": [],
+                                      "minutes": result.minutes, "issues": result.issues}
 
 
 @pytest.mark.parametrize("workers", [1, 2])

@@ -500,3 +500,13 @@ class TestRouteFunctionsAreWired:
     def test_gate_redo_targets_match_sad(self):
         assert S.GATE_REDO_TARGET["G2"] == S.NODE_EXTRACT
         assert S.GATE_REDO_TARGET["G3"] == S.NODE_ASSEMBLE
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("retry,expected", [(0, ROUTE_RETRY), (2, ROUTE_RETRY), (3, ROUTE_GIVE_UP)])
+def test_mixed_legacy_structural_and_new_soft_issues_keep_retry(reverse, retry, expected):
+    """混合清单不豁免旧结构问题；顺序不影响路由。"""
+    issues = [{"rule": "missing_structure"}, {"source": "template", "blocking": False}]
+    if reverse:
+        issues.reverse()
+    assert route_after_validate({"validation_issues": issues, "gen_retry": retry}) == expected

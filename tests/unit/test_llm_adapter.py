@@ -142,7 +142,7 @@ def test_health_probe_failure_is_reported(monkeypatch):
 
 @pytest.mark.parametrize("text", ["", "[00:00] 张三：同意预算。"])
 def test_graph_factory_returns_only_contract_keys(text):
-    """工厂仅返回三个图契约键，成功事项也保持图兼容形状。"""
+    """D4 工厂返回五个图契约键，丰富原料与问题不得丢失。"""
     data = {
         "title": "会议纪要",
         "meeting_time": "",
@@ -163,11 +163,12 @@ def test_graph_factory_returns_only_contract_keys(text):
     }
     llm = FakeLlmClient(script=[json.dumps(data)])
     result = make_llm_extractor(llm, max_workers=1)(text)
-    assert set(result) == {"topics", "resolutions", "action_items"}
+    assert set(result) == {"topics", "resolutions", "action_items", "minutes", "issues"}
     if text:
         assert result["topics"][0]["title"] == "预算"
         assert result["resolutions"][0]["text"] == "同意预算"
         assert result["resolutions"][0]["refs"][0]["start_ms"] == 0
     else:
-        assert result == {"topics": [], "resolutions": [], "action_items": []}
+        assert result == {"topics": [], "resolutions": [], "action_items": [],
+                          "minutes": {}, "issues": []}
         assert llm.calls == []

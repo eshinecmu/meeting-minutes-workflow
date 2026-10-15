@@ -237,6 +237,10 @@ class PipelineState(TypedDict, total=False):
     resolutions: list[dict]
     action_items: list[dict]
 
+    # 丰富原料与全阶段问题；可选键，无 append reducer。
+    minutes: dict
+    issues: list[dict]
+
     # --- 闸口 ---
     pending_decisions: list[dict]
 
@@ -287,10 +291,10 @@ NODE_OUTPUTS: dict[str, tuple[str, ...]] = {
     NODE_INGEST: ("audio_paths", "chunk_plan"),
     NODE_TRANSCRIBE: ("transcript", "transcript_meta"),
     NODE_REVIEW: ("review_result", "record_markdown"),
-    NODE_EXTRACT: ("topics", "resolutions", "action_items"),
+    NODE_EXTRACT: ("topics", "resolutions", "action_items", "minutes", "issues"),
     NODE_GATE_G2: (),
-    NODE_GENERATE: ("minutes_structured",),
-    NODE_VALIDATE: ("validation_issues", "gen_retry"),
+    NODE_GENERATE: ("minutes_structured", "gen_retry"),
+    NODE_VALIDATE: ("validation_issues", "issues", "minutes_structured"),
     NODE_ASSEMBLE: ("minutes_markdown",),
     NODE_GATE_G3: (),
     NODE_EXPORT: ("export_paths", "idem_keys"),
