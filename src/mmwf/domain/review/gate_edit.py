@@ -4,8 +4,18 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
+from typing import Mapping, NoReturn, TypedDict, cast
 
 from mmwf.domain.errors import MmwfError
+
+
+class FieldChange(TypedDict):
+    op: str
+    old_sha256: str
+    new_sha256: str
+    old_chars: int
+    new_chars: int
+
 
 G2_FIELDS = ("topics", "resolutions", "action_items")
 EDITABLE = {
@@ -15,19 +25,19 @@ EDITABLE = {
 }
 
 
-def canonical_json(value):
+def canonical_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
-def fingerprint(value):
+def fingerprint(value: object) -> str:
     return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def invalid(message):
+def invalid(message: str) -> NoReturn:
     raise MmwfError(code="E4001", detail=message)
 
 
-def normalise(value):
+def normalise(value: dict[str, object]) -> dict[str, object]:
     """仅规范化可编辑文本；只读证据逐字保留。"""
     out = deepcopy(value)
     for name in G2_FIELDS:
@@ -43,31 +53,31 @@ def normalise(value):
                     if key == "owner" and not item[key].strip():
                         item[key] = "暂无"
     if isinstance(out.get("minutes_markdown"), str):
-        out["minutes_markdown"] = out["minutes_markdown"].replace("\r\n", "\n").replace("\r", "\n")
+        out["minutes_markdown"] = cast(str, out["minutes_markdown"]).replace("\r\n", "\n").replace("\r", "\n")
     return out
 
 
-def gate_content(gate, state):
+def gate_content(gate: str, state: Mapping[str, object]) -> dict[str, object]:
     if gate == "G3":
         return {"minutes_markdown": state.get("minutes_markdown") or "",
                 "minutes": deepcopy(state.get("minutes_structured") or {})}
     return normalise({key: deepcopy(state.get(key) or []) for key in G2_FIELDS})
 
 
-def edit_minutes(baseline, payload):
+def edit_minutes(baseline: Mapping[str, object], payload: object) -> dict[str, object]:
     """递归补丁只改业务字段；列表长度、身份及证据均继承基线。"""
     fields = {"": {"title", "meeting_time", "location", "host", "attendees", "recorder"},
               "topics": {"name", "discussion", "readings"},
               "item": {"content", "owner", "deadline"},
               "pending": {"content", "owner", "deadline", "decision_maker"}}
     children = {"": {"topics"}, "topics": {"resolutions", "action_items", "pending_decisions"}, "item": set(), "pending": set()}
-    def patch(old, new, kind):
+    def patch(old: Mapping[str, object], new: object, kind: str) -> dict[str, object]:
         if not isinstance(new, dict):
             invalid("结构化纪要必须是对象")
-        out = deepcopy(old)
+        out = deepcopy(cast(dict[str, object], old))
         for key, value in new.items():
             if key in children[kind]:
-                previous = old.get(key, [])
+                previous = cast(list[dict[str, object]], old.get(key, []))
                 if not isinstance(value, list) or len(value) != len(previous):
                     invalid("不允许新增、删除或迁移条目")
                 out[key] = [patch(a, b, "topics" if key == "topics" else ("pending" if key == "pending_decisions" else "item")) for a, b in zip(previous, value)]
@@ -93,7 +103,7 @@ def edit_minutes(baseline, payload):
     return patch(baseline, payload, "")
 
 
-def validate_edit(gate, baseline, payload):
+def validate_edit(gate: str, baseline: Mapping[str, object], payload: object) -> dict[str, object]:
     """整列表替换；索引 / id 定位既有条目，不新增、删除或迁移归属。"""
     allowed = set(G2_FIELDS) if gate == "G2" else {"minutes_markdown", "minutes"}
     if gate not in {"G2", "G3"} or not isinstance(payload, dict) or not payload or set(payload) - allowed:
@@ -102,12 +112,12 @@ def validate_edit(gate, baseline, payload):
     after = deepcopy(before)
     if gate == "G3":
         if "minutes" in payload:
-            after["minutes"] = edit_minutes(before["minutes"], payload["minutes"])
+            after["minutes"] = edit_minutes(cast(dict[str, object], before["minutes"]), payload["minutes"])
         if "minutes_markdown" in payload:
             value = payload["minutes_markdown"]
             if not isinstance(value, str) or not value.strip():
                 invalid("纪要必须是非空字符串")
-            if "minutes" not in payload and "".join(value.split()) != "".join(before["minutes_markdown"].split()):
+            if "minutes" not in payload and "".join(value.split()) != "".join(cast(str, before["minutes_markdown"]).split()):
                 raise MmwfError(code="E4001", user_message="业务修改请使用结构化编辑。")
             after["minutes_markdown"] = value.replace("\r\n", "\n").replace("\r", "\n")
         return after
@@ -117,7 +127,7 @@ def validate_edit(gate, baseline, payload):
     if not any(payload.get(name, before.get(name)) for name in G2_FIELDS):
         raise MmwfError(code="E4003", detail="三列表不能全部为空")
     for name, items in payload.items():
-        old_items = baseline.get(name) or []
+        old_items = cast(list[dict[str, object]], baseline.get(name)) or []
         if not isinstance(items, list) or any(not isinstance(i, dict) for i in items):
             invalid(f"{name} 必须是对象列表")
         # §2.2 同时提及可清空与禁止删除；按较窄范围保留既有条目。
@@ -149,24 +159,24 @@ def validate_edit(gate, baseline, payload):
     if not any(after.get(name) for name in G2_FIELDS):
         raise MmwfError(code="E4003", detail="三列表不能全部为空")
     # 无 id 时按原索引定位；同形无 id 条目无法推断身份，不猜测重排。
-    titles = [t.get("title") for t in before["topics"]]
-    renames = {old["title"]: new["title"] for old, new in zip(before["topics"], after["topics"]) if old["title"] != new["title"]}
-    new_titles = [t.get("title") for t in after["topics"]]
+    titles = [t.get("title") for t in cast(list[dict[str, object]], before["topics"])]
+    renames = {old["title"]: new["title"] for old, new in zip(cast(list[dict[str, object]], before["topics"]), cast(list[dict[str, object]], after["topics"])) if old["title"] != new["title"]}
+    new_titles = [t.get("title") for t in cast(list[dict[str, object]], after["topics"])]
     if renames and (len(titles) != len(set(titles)) or len(new_titles) != len(set(new_titles))):
         invalid("议题标题重复，无法确定事项关联，请人工核对")
     for name in ("resolutions", "action_items"):
-        for item in after[name]:
+        for item in cast(list[dict[str, object]], after[name]):
             for key in ("topic", "topic_title"):
                 if isinstance(item.get(key), str) and item[key] in renames:
                     item[key] = renames[item[key]]
     return normalise(after)
 
 
-def field_diff(before, after):
+def field_diff(before: object, after: object) -> dict[str, FieldChange]:
     """字段路径排序；摘要不携带正文，字符数按规范化 JSON 计算。"""
-    changed = {}
+    changed: dict[str, FieldChange] = {}
 
-    def walk(old, new, path):
+    def walk(old: object, new: object, path: str) -> None:
         if canonical_json(old) == canonical_json(new):
             return
         if isinstance(old, dict) and isinstance(new, dict):
@@ -182,7 +192,7 @@ def field_diff(before, after):
         else:
             emit(old, new, path, "replace")
 
-    def emit(old, new, path, op):
+    def emit(old: object, new: object, path: str, op: str) -> None:
         changed[path] = {"op": op, "old_sha256": fingerprint(old), "new_sha256": fingerprint(new),
                          "old_chars": len(canonical_json(old)), "new_chars": len(canonical_json(new))}
 

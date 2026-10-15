@@ -42,7 +42,7 @@ import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence, cast
 
 from mmwf.domain.errors import InputError, MmwfError
 
@@ -354,7 +354,7 @@ def template_section_bindings(template: MinutesTemplate) -> dict[str, str]:
     style = _parse_style(template.style, order)
     if "section_bindings" not in style:
         raise TemplateFormatError("应用模板缺少 style.section_bindings", field="section_bindings")
-    return style["section_bindings"]
+    return cast(dict[str, str], style["section_bindings"])
 
 
 def parse_template(
